@@ -3,7 +3,7 @@
    Der große Offline-Ausbau (Metadaten + Thumbnails in IndexedDB)
    folgt in Phase 3 (v11–v13). */
 
-const CACHE = 'kosfiles-shell-v7';
+const CACHE = 'kosfiles-shell-v9';
 const SHELL = [
   './',
   './index.html',

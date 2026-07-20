@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#0f1013">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'self'; style-src 'unsafe-inline'; img-src 'self' blob: data:; connect-src https://api.dropboxapi.com https://content.dropboxapi.com; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-192.png">
 <title>K-OS Files — v6</title>
@@ -357,6 +358,31 @@
   }
   .folder-head .f-name { font-size: 13px; font-weight: 600; flex: 1; }
   .folder-head .f-count { font-size: 11px; color: var(--text3); }
+  .folder-head .f-add {
+    width: 28px; height: 28px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--text2);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .folder-head .f-add:active { border-color: var(--accent); color: var(--accent); }
+  .danger-hint {
+    font-size: 11.5px;
+    color: var(--err);
+    line-height: 1.55;
+    padding: 10px 13px;
+    background: rgba(224,122,85,0.08);
+    border: 1px solid rgba(224,122,85,0.25);
+    border-radius: 10px;
+    margin-bottom: 14px;
+  }
+  .sheet-cta.danger { background: var(--err); color: #fff; }
+  .file-meta-line { font-size: 11px; color: var(--text3); margin: -8px 0 14px; }
   .folder-head .f-arrow { color: var(--text3); transition: transform 0.18s; }
   .folder-sec.open .f-arrow { transform: rotate(90deg); }
 
@@ -1073,6 +1099,49 @@
   <div id="status-opts"></div>
 </div>
 
+<div class="sheet" id="sheet-file">
+  <div class="sheet-handle"></div>
+  <div class="sheet-title" id="file-title" style="word-break:break-all;"></div>
+  <div class="file-meta-line" id="file-meta"></div>
+  <div class="ow-item" onclick="fileAction('rename')">
+    <div class="ow-ico" data-ico="pen"></div>
+    <div class="ow-name">Umbenennen</div>
+  </div>
+  <div class="ow-item" onclick="fileAction('move')">
+    <div class="ow-ico" data-ico="folder"></div>
+    <div class="ow-name">Verschieben nach…</div>
+  </div>
+  <div class="ow-divider"></div>
+  <div class="ow-item" onclick="fileAction('delete')">
+    <div class="ow-ico" data-ico="trash" style="color:var(--err);border-color:rgba(224,122,85,0.3);"></div>
+    <div class="ow-name" style="color:var(--err);">Löschen</div>
+  </div>
+</div>
+
+<div class="sheet" id="sheet-rename">
+  <div class="sheet-handle"></div>
+  <div class="sheet-title">Umbenennen</div>
+  <div class="sheet-label">Neuer Name</div>
+  <input class="sheet-input" id="rename-input">
+  <button class="sheet-cta" onclick="doRename()">UMBENENNEN</button>
+</div>
+
+<div class="sheet" id="sheet-move">
+  <div class="sheet-handle"></div>
+  <div class="sheet-title">Verschieben nach</div>
+  <div id="move-opts"></div>
+</div>
+
+<div class="sheet" id="sheet-delete">
+  <div class="sheet-handle"></div>
+  <div class="sheet-title">Löschen</div>
+  <div class="danger-hint" id="delete-hint"></div>
+  <div class="conn-hint">Gelöschte Dateien landen im Dropbox-Papierkorb und sind dort 30 Tage wiederherstellbar (dropbox.com → Gelöschte Dateien).</div>
+  <button class="sheet-cta danger" onclick="doDelete()">ENDGÜLTIG LÖSCHEN</button>
+</div>
+
+<input type="file" id="file-input" multiple style="display:none;">
+
 <div id="toast"></div>
 
 <script>
@@ -1422,7 +1491,8 @@ const ICONS = {
   check:    '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
   settings: '<line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="9" cy="7" r="2" fill="var(--surface2)"/><circle cx="15" cy="12" r="2" fill="var(--surface2)"/><circle cx="7" cy="17" r="2" fill="var(--surface2)"/>',
   triangle: '<path d="M12 4.5L20.5 19h-17z"/>',
-  folder:   '<path d="M3.5 6.5A1.5 1.5 0 015 5h4.5l2 2.5H19a1.5 1.5 0 011.5 1.5v9A1.5 1.5 0 0119 19.5H5A1.5 1.5 0 013.5 18z"/>'
+  folder:   '<path d="M3.5 6.5A1.5 1.5 0 015 5h4.5l2 2.5H19a1.5 1.5 0 011.5 1.5v9A1.5 1.5 0 0119 19.5H5A1.5 1.5 0 013.5 18z"/>',
+  trash:    '<path d="M4.5 6.5h15"/><path d="M8.5 6.5V5A1.5 1.5 0 0110 3.5h4A1.5 1.5 0 0115.5 5v1.5"/><path d="M6.5 6.5l.9 12.6a1.5 1.5 0 001.5 1.4h6.2a1.5 1.5 0 001.5-1.4l.9-12.6"/><line x1="10" y1="10.5" x2="10" y2="16.5"/><line x1="14" y1="10.5" x2="14" y2="16.5"/>'
 };
 function icon(name, sz = 18, sw = 1.7) {
   return `<svg width="${sz}" height="${sz}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round">${ICONS[name] || ICONS.file}</svg>`;
@@ -1499,6 +1569,8 @@ async function startConnect() {
   try {
     const verifier = randVerifier();
     sessionStorage.setItem(SS_VER, verifier);
+    const state = randVerifier().slice(0, 24);
+    sessionStorage.setItem('kosfiles_oauth_state', state);
     const challenge = b64url(await sha256(verifier));
     const u = new URL('https://www.dropbox.com/oauth2/authorize');
     u.searchParams.set('client_id', key);
@@ -1507,6 +1579,7 @@ async function startConnect() {
     u.searchParams.set('code_challenge_method', 'S256');
     u.searchParams.set('redirect_uri', redirectUri());
     u.searchParams.set('token_access_type', 'offline');
+    u.searchParams.set('state', state);
     location.href = u.toString();
   } catch (e) {
     connErr('Start fehlgeschlagen: ' + e.message);
@@ -1920,13 +1993,14 @@ function renderProject(p) {
           <div class="f-ico">${icon(folderIcon(folder), 17)}</div>
           <div class="f-name">${label}</div>
           <div class="f-count">${fl.length}</div>
+          <button class="f-add" data-folder="${folder}" title="Hochladen">${icon('plus', 14, 2)}</button>
           <span class="f-arrow">${icon('chevR', 14, 2)}</span>
         </div>
         <div class="file-grid">
           ${fl.map(f => {
             const tp = thumbable(extOf(f.n)) ? filePath(p, folder, f.n) : '';
             return `
-            <div class="file-item" data-file="${f.n}">
+            <div class="file-item" data-file="${f.n}" data-folder="${folder}">
               <div class="file-thumb" data-thumb="${tp}"><span class="thumb-ico">${icon(extIcon(extOf(f.n)), 22)}</span><span class="file-ext">${extOf(f.n) || '—'}</span></div>
               <div class="file-name">${baseOf(f.n)}</div>
             </div>`;
@@ -1937,12 +2011,17 @@ function renderProject(p) {
   $('folder-list').querySelectorAll('.folder-head').forEach(h => {
     h.onclick = () => h.parentElement.classList.toggle('open');
   });
+  $('folder-list').querySelectorAll('.f-add').forEach(b => {
+    b.onclick = e => { e.stopPropagation(); startUpload(p, b.dataset.folder); };
+  });
   $('folder-list').querySelectorAll('.file-item').forEach(el => {
     el.onclick = () => {
+      if (suppressClick) { suppressClick = false; return; }
       const w = findWork(p, el.dataset.file);
       if (w) openWork(w);
-      else toast('Referenz — Vorschau folgt in v7');
+      else openFileSheet(p, el.dataset.folder, el.dataset.file);
     };
+    attachLongPress(el, () => openFileSheet(p, el.dataset.folder, el.dataset.file));
   });
 
   lowShowView('project');
@@ -2047,6 +2126,289 @@ async function setStatus(p, status) {
   renderGrid(activeFilter);
   closeSheets();               /* popstate rendert die Projektansicht mit neuem Status */
   toast('Status: ' + STATUS[status].label);
+}
+
+/* ════════ DATEI-OPERATIONEN (v9) ════════ */
+let suppressClick = false;
+let currentFile = null;        /* { p, folder, name } */
+let uploadTarget = null;       /* { p, folder } */
+
+function attachLongPress(el, fn) {
+  let t = null, sx = 0, sy = 0;
+  el.addEventListener('contextmenu', e => { e.preventDefault(); fn(); });
+  el.addEventListener('pointerdown', e => {
+    sx = e.clientX; sy = e.clientY;
+    t = setTimeout(() => { t = null; suppressClick = true; fn(); }, 500);
+  });
+  const cancel = () => { if (t) { clearTimeout(t); t = null; } };
+  el.addEventListener('pointerup', cancel);
+  el.addEventListener('pointercancel', cancel);
+  el.addEventListener('pointerleave', cancel);
+  el.addEventListener('pointermove', e => {
+    if (t && (Math.abs(e.clientX - sx) > 10 || Math.abs(e.clientY - sy) > 10)) cancel();
+  });
+}
+
+function findFileObj(p, folder, name) {
+  return (p.files[folder] || []).find(f => f.n === name) || null;
+}
+
+/* Projekt frisch aus Dropbox laden und in DB ersetzen */
+async function reloadProject(p) {
+  const name = p.meta._dbx;
+  const entries = await listAll('/' + name, true);
+  const metaTxt = await dbxDownloadText('/' + name + '/project.json');
+  const np = buildProject(name, entries, metaTxt ? safeJson(metaTxt, null) : null);
+  const i = DB.projects.findIndex(x => x === p || x.meta.id === p.meta.id);
+  if (i >= 0) DB.projects[i] = np; else DB.projects.unshift(np);
+  renderGrid(activeFilter);
+  renderPipeline();
+  renderFeed();
+  return np;
+}
+
+/* pinned/coverFile nachziehen, wenn eine Datei umbenannt/verschoben/gelöscht wird.
+   newRel = neuer relativer Pfad oder null bei Löschung. Gibt true bei Änderung zurück. */
+function fixMetaPaths(p, oldRel, newRel) {
+  const m = p.meta;
+  let changed = false;
+  const oldName = oldRel.split('/').pop();
+  m.pinned = (m.pinned || []).flatMap(x => {
+    if (x === oldRel || x.split('/').pop() === oldName) {
+      changed = true;
+      return newRel ? [newRel] : [];
+    }
+    return [x];
+  });
+  if (m.coverFile && (m.coverFile === oldRel || m.coverFile.split('/').pop() === oldName)) {
+    m.coverFile = newRel; changed = true;
+  }
+  return changed;
+}
+
+/* ── Upload ── */
+function startUpload(p, folder) {
+  if (MODE === 'live' && !p.meta._dbx) { toast('Projekt nicht beschreibbar'); return; }
+  uploadTarget = { p, folder };
+  $('file-input').value = '';
+  $('file-input').click();
+}
+
+async function uploadOne(path, file) {
+  const LIMIT = 140 * 1024 * 1024;         /* files/upload-Grenze: 150 MB */
+  if (file.size <= LIMIT) return dbxUpload(path, file, null);
+  /* Upload-Session für große Dateien (z. B. PSDs) */
+  const CHUNK = 48 * 1024 * 1024;
+  const at = await ensureToken();
+  const first = file.slice(0, CHUNK);
+  let r = await fetch('https://content.dropboxapi.com/2/files/upload_session/start', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + at, 'Dropbox-API-Arg': JSON.stringify({ close: false }), 'Content-Type': 'application/octet-stream' },
+    body: first
+  });
+  if (!r.ok) throw new Error('upload_session/start → ' + r.status);
+  const sid = (await r.json()).session_id;
+  let offset = first.size;
+  while (offset < file.size) {
+    const chunk = file.slice(offset, offset + CHUNK);
+    const isLast = offset + chunk.size >= file.size;
+    const arg = isLast
+      ? { cursor: { session_id: sid, offset }, commit: { path, mode: 'add', autorename: true, mute: true } }
+      : { cursor: { session_id: sid, offset }, close: false };
+    const url = isLast
+      ? 'https://content.dropboxapi.com/2/files/upload_session/finish'
+      : 'https://content.dropboxapi.com/2/files/upload_session/append_v2';
+    const at2 = await ensureToken();
+    r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + at2, 'Dropbox-API-Arg': JSON.stringify(arg), 'Content-Type': 'application/octet-stream' },
+      body: chunk
+    });
+    if (!r.ok) throw new Error((isLast ? 'finish' : 'append') + ' → ' + r.status);
+    offset += chunk.size;
+  }
+  return true;
+}
+
+async function handleUploadFiles(fileList) {
+  const tgt = uploadTarget;
+  uploadTarget = null;
+  if (!tgt || !fileList || !fileList.length) return;
+  const { p, folder } = tgt;
+  const arr = [...fileList];
+
+  if (MODE !== 'live') {
+    for (const f of arr) {
+      let n = f.name, i = 1;
+      while ((p.files[folder] || []).some(x => x.n === n)) {
+        n = baseOf(f.name) + ' (' + (i++) + ')' + (extOf(f.name) ? '.' + extOf(f.name) : '');
+      }
+      (p.files[folder] = p.files[folder] || []).push({ n, kb: Math.max(1, Math.round(f.size / 1024)), mod: TODAY });
+    }
+    p.meta.updated = TODAY;
+    renderProject(p);
+    renderGrid(activeFilter); renderFeed();
+    toast(arr.length + ' Datei(en) hinzugefügt (Demo)');
+    return;
+  }
+
+  setSync('load');
+  let okCount = 0;
+  try {
+    for (let i = 0; i < arr.length; i++) {
+      const f = arr[i];
+      toast(`Hochladen ${i + 1}/${arr.length}: ${f.name}`);
+      const path = '/' + p.meta._dbx + (folder ? '/' + folder : '') + '/' + f.name;
+      await uploadOne(path, f);
+      okCount++;
+    }
+    const np = await reloadProject(p);
+    renderProject(np);
+    setSync('ok');
+    toast(okCount + ' Datei(en) hochgeladen');
+  } catch (e) {
+    console.error(e);
+    setSync('err');
+    toast('Upload fehlgeschlagen nach ' + okCount + ' Datei(en): ' + e.message.slice(0, 60));
+    try { const np = await reloadProject(p); renderProject(np); setSync('ok'); } catch (_) {}
+  }
+}
+
+/* ── Datei-Sheet + Aktionen ── */
+function openFileSheet(p, folder, name) {
+  const f = findFileObj(p, folder, name);
+  currentFile = { p, folder, name };
+  $('file-title').textContent = name;
+  $('file-meta').textContent =
+    (f ? fmtSize(f.kb) + ' · ' + fmtDate(f.mod) + ' · ' : '') + (folder || 'Projekt-Root');
+  openSheet('sheet-file');
+}
+
+function fileAction(kind) {
+  if (!currentFile) return;
+  hideSheetsUI();                       /* Datei-Sheet zu, Folge-Sheet nutzt denselben History-Eintrag */
+  history.back();
+  setTimeout(() => {
+    if (kind === 'rename') {
+      $('rename-input').value = currentFile.name;
+      openSheet('sheet-rename');
+    } else if (kind === 'move') {
+      const { p, folder } = currentFile;
+      const STD = ['01 Referenzen', '02 Arbeitsdateien', '03 Exporte', '04 Social'];
+      const opts = [...new Set([...Object.keys(p.files), ...STD, ''])].sort()
+        .filter(f => f !== folder);
+      $('move-opts').innerHTML = opts.map(f => `
+        <div class="ow-item" data-f="${f}">
+          <div class="ow-ico">${icon(folderIcon(f), 17)}</div>
+          <div class="ow-name">${f === '' ? 'Projekt-Root' : f}</div>
+        </div>`).join('');
+      $('move-opts').querySelectorAll('.ow-item').forEach(el => {
+        el.onclick = () => doMove(el.dataset.f);
+      });
+      openSheet('sheet-move');
+    } else if (kind === 'delete') {
+      $('delete-hint').innerHTML = '„<b>' + currentFile.name + '</b>" wirklich löschen?';
+      openSheet('sheet-delete');
+    }
+  }, 60);
+}
+
+function relPathOf(cf) { return (cf.folder ? cf.folder + '/' : '') + cf.name; }
+function absPathOf(cf) { return '/' + cf.p.meta._dbx + '/' + relPathOf(cf); }
+
+async function afterFileOp(p) {
+  if (MODE === 'live') {
+    const np = await reloadProject(p);
+    closeSheets();
+    renderProject(np);
+  } else {
+    p.meta.updated = TODAY;
+    renderGrid(activeFilter); renderPipeline(); renderFeed();
+    closeSheets();
+    renderProject(p);
+  }
+}
+
+async function doRename() {
+  const cf = currentFile;
+  if (!cf) return;
+  const newName = sanitizeName($('rename-input').value || '');
+  if (!newName || newName === cf.name) { closeSheets(); return; }
+  const oldExt = extOf(cf.name), newExt = extOf(newName);
+  const finalName = (oldExt && !newExt) ? newName + '.' + oldExt : newName;
+  const oldRel = relPathOf(cf);
+  const newRel = (cf.folder ? cf.folder + '/' : '') + finalName;
+
+  try {
+    if (MODE === 'live') {
+      setSync('load');
+      await dbxRPC('files/move_v2', { from_path: absPathOf(cf), to_path: '/' + cf.p.meta._dbx + '/' + newRel, autorename: false });
+      if (fixMetaPaths(cf.p, oldRel, newRel)) await writeProjectMeta(cf.p);
+      setSync('ok');
+    } else {
+      const f = findFileObj(cf.p, cf.folder, cf.name);
+      if (f) f.n = finalName;
+      fixMetaPaths(cf.p, oldRel, newRel);
+    }
+    await afterFileOp(cf.p);
+    toast('Umbenannt in „' + finalName + '"');
+  } catch (e) {
+    console.error(e); setSync('err');
+    toast('Umbenennen fehlgeschlagen: ' + e.message.slice(0, 60));
+  }
+}
+
+async function doMove(targetFolder) {
+  const cf = currentFile;
+  if (!cf) return;
+  const oldRel = relPathOf(cf);
+  const newRel = (targetFolder ? targetFolder + '/' : '') + cf.name;
+  try {
+    if (MODE === 'live') {
+      setSync('load');
+      if (targetFolder) await dbxCreateFolder('/' + cf.p.meta._dbx + '/' + targetFolder);
+      await dbxRPC('files/move_v2', { from_path: absPathOf(cf), to_path: '/' + cf.p.meta._dbx + '/' + newRel, autorename: true });
+      if (fixMetaPaths(cf.p, oldRel, newRel)) await writeProjectMeta(cf.p);
+      setSync('ok');
+    } else {
+      const arr = cf.p.files[cf.folder] || [];
+      const i = arr.findIndex(f => f.n === cf.name);
+      if (i >= 0) {
+        const [f] = arr.splice(i, 1);
+        (cf.p.files[targetFolder] = cf.p.files[targetFolder] || []).push(f);
+      }
+      fixMetaPaths(cf.p, oldRel, newRel);
+    }
+    await afterFileOp(cf.p);
+    toast('Verschoben nach ' + (targetFolder || 'Projekt-Root'));
+  } catch (e) {
+    console.error(e); setSync('err');
+    toast('Verschieben fehlgeschlagen: ' + e.message.slice(0, 60));
+  }
+}
+
+async function doDelete() {
+  const cf = currentFile;
+  if (!cf) return;
+  const oldRel = relPathOf(cf);
+  try {
+    if (MODE === 'live') {
+      setSync('load');
+      await dbxRPC('files/delete_v2', { path: absPathOf(cf) });
+      if (fixMetaPaths(cf.p, oldRel, null)) await writeProjectMeta(cf.p);
+      setSync('ok');
+    } else {
+      const arr = cf.p.files[cf.folder] || [];
+      const i = arr.findIndex(f => f.n === cf.name);
+      if (i >= 0) arr.splice(i, 1);
+      fixMetaPaths(cf.p, oldRel, null);
+    }
+    await afterFileOp(cf.p);
+    toast('„' + cf.name + '" gelöscht (Dropbox-Papierkorb)');
+  } catch (e) {
+    console.error(e); setSync('err');
+    toast('Löschen fehlgeschlagen: ' + e.message.slice(0, 60));
+  }
 }
 
 /* ════════ RENDER: PIPELINE ════════ */
@@ -2369,6 +2731,7 @@ function initNav() {
   renderFeed();
   renderCalendar();
   renderPlatRow();
+  $('file-input').onchange = e => handleUploadFiles(e.target.files);
   history.replaceState({ k: 'screen', screen: { type: 'tab', tab: 'studio' } }, '');
 
   const params = new URLSearchParams(location.search);
@@ -2379,7 +2742,15 @@ function initNav() {
     return;
   }
   if (params.get('code')) {
-    history.replaceState(null, '', location.pathname);
+    const expState = sessionStorage.getItem('kosfiles_oauth_state');
+    sessionStorage.removeItem('kosfiles_oauth_state');
+    history.replaceState({ k: 'screen', screen: { type: 'tab', tab: 'studio' } }, '', location.pathname);
+    if (expState && params.get('state') !== expState) {
+      setSync('demo');
+      connErr('Login abgelehnt: ungültiger state-Parameter (möglicher CSRF-Versuch). Bitte erneut verbinden.');
+      toast('Login abgelehnt — Sicherheitsprüfung fehlgeschlagen');
+      return;
+    }
     try {
       setSync('load');
       await finishConnect(params.get('code'));
