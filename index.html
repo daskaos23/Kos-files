@@ -208,6 +208,13 @@
   .pcard-title { font-size: 13px; font-weight: 600; line-height: 1.3; margin-bottom: 4px; }
   .pcard-meta { font-size: 10.5px; color: var(--text3); }
 
+  /* Thumbnails (v7): geladenes Bild ersetzt Icon/Gradient */
+  .has-thumb .thumb-ico { display: none; }
+  .pcard-cover.has-thumb, .pp-thumb.has-thumb, .pin-thumb.has-thumb,
+  .file-thumb.has-thumb, .work-preview.has-thumb, .proj-hero.has-thumb {
+    background-color: var(--surface2);
+  }
+
   .cv-1 { background: radial-gradient(circle at 28% 32%, rgba(214,64,120,0.5) 0%, transparent 55%), radial-gradient(circle at 78% 70%, rgba(110,60,200,0.45) 0%, transparent 60%), #17121c; }
   .cv-2 { background: radial-gradient(circle at 70% 28%, rgba(90,200,120,0.4) 0%, transparent 52%), radial-gradient(circle at 22% 78%, rgba(40,160,150,0.4) 0%, transparent 55%), #101713; }
   .cv-3 { background: radial-gradient(circle at 30% 68%, rgba(220,110,60,0.45) 0%, transparent 55%), radial-gradient(circle at 74% 26%, rgba(220,170,60,0.35) 0%, transparent 50%), #191410; }
@@ -1047,6 +1054,25 @@
   </div>
 </div>
 
+<div class="sheet" id="sheet-create">
+  <div class="sheet-handle"></div>
+  <div class="sheet-title">Neues Projekt</div>
+  <div class="sheet-label">Projektname</div>
+  <input class="sheet-input" id="create-name" placeholder="z. B. Mural Gastro Augsburg">
+  <div class="conn-hint">
+    Legt in Dropbox einen Projektordner mit den Unterordnern
+    <b>01 Referenzen</b>, <b>02 Arbeitsdateien</b>, <b>03 Exporte</b>,
+    <b>04 Social</b> sowie eine <b>project.json</b> an.
+  </div>
+  <button class="sheet-cta" onclick="doCreateProject()">PROJEKT ANLEGEN</button>
+</div>
+
+<div class="sheet" id="sheet-status">
+  <div class="sheet-handle"></div>
+  <div class="sheet-title">Status ändern</div>
+  <div id="status-opts"></div>
+</div>
+
 <div id="toast"></div>
 
 <script>
@@ -1365,6 +1391,7 @@ function buildProject(name, entries, metaIn) {
   if (!meta.publishLog) meta.publishLog = [];
   if (!meta.pinned) meta.pinned = [];
   if (Object.keys(files).length === 0) files[''] = [];
+  meta._dbx = name;                 /* echter Dropbox-Ordnername (Runtime, nicht persistiert) */
   return { meta, files };
 }
 
@@ -1423,7 +1450,6 @@ function platChip(id, sz = 30) {
 
 /* ══ DOM ══ (ab hier Rendering + Dropbox-API) */
 
-let navStack = [];
 let toastTimer = null;
 let selPlatform = null;
 let currentProject = null;
@@ -1574,6 +1600,131 @@ async function listAll(path, recursive) {
   return entries;
 }
 
+/* ════════ THUMBNAILS (v7) ════════ */
+const thumbCache = new Map();   /* dropboxPath -> objectURL | 'none' | 'pending' */
+
+function thumbable(ext) {
+  return ['jpg','jpeg','png','gif','webp','bmp','tif','tiff'].includes(ext);
+}
+function filePath(project, folder, name) {
+  const dbx = project.meta._dbx;
+  if (!dbx) return null;
+  return '/' + dbx + (folder ? '/' + folder : '') + '/' + name;
+}
+function coverPathOf(project) {
+  const files = allFiles(project);
+  if (project.meta.coverFile) {
+    const name = project.meta.coverFile.split('/').pop();
+    const f = files.find(x => x.n === name);
+    if (f && thumbable(f.ext)) return filePath(project, f.folder, f.n);
+  }
+  const imgs = files.filter(f => thumbable(f.ext));
+  const pick = imgs.find(f => f.folder.startsWith('03'))
+            || imgs.find(f => f.folder.startsWith('04'))
+            || imgs.find(f => f.folder.startsWith('01'))
+            || imgs[0];
+  return pick ? filePath(project, pick.folder, pick.n) : null;
+}
+function workThumbPath(work) {
+  const img = work.files.find(f => thumbable(f.ext));
+  return img ? filePath(work.project, img.folder, img.n) : coverPathOf(work.project);
+}
+function b64ToUrl(b64) {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return URL.createObjectURL(new Blob([bytes], { type: 'image/jpeg' }));
+}
+async function fetchThumbBatch(paths) {
+  if (MODE !== 'live') return;
+  const todo = [];
+  for (const p of paths) {
+    if (p && !thumbCache.has(p) && !todo.includes(p)) todo.push(p);
+    if (todo.length >= 25) break;
+  }
+  if (!todo.length) return;
+  todo.forEach(p => thumbCache.set(p, 'pending'));
+  try {
+    const at = await ensureToken();
+    const r = await fetch('https://content.dropboxapi.com/2/files/get_thumbnail_batch', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + at, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        entries: todo.map(path => ({ path, format: 'jpeg', size: 'w256h256', mode: 'fitone_bestfit' }))
+      })
+    });
+    if (!r.ok) { todo.forEach(p => thumbCache.set(p, 'none')); return; }
+    const data = await r.json();
+    (data.entries || []).forEach((e, i) => {
+      const path = todo[i];
+      if (e['.tag'] === 'success' && e.thumbnail) thumbCache.set(path, b64ToUrl(e.thumbnail));
+      else thumbCache.set(path, 'none');
+    });
+  } catch (err) {
+    todo.forEach(p => thumbCache.set(p, 'none'));
+  }
+}
+async function hydrateThumbs(scope) {
+  if (MODE !== 'live' || !scope) return;
+  const els = [...scope.querySelectorAll('[data-thumb]')].filter(el => el.dataset.thumb);
+  if (!els.length) return;
+  await fetchThumbBatch(els.map(el => el.dataset.thumb));
+  els.forEach(el => {
+    const u = thumbCache.get(el.dataset.thumb);
+    if (u && u !== 'none' && u !== 'pending') {
+      el.style.backgroundImage = `url(${u})`;
+      el.style.backgroundSize = 'cover';
+      el.style.backgroundPosition = 'center';
+      el.classList.add('has-thumb');
+      const ic = el.querySelector('.thumb-ico');
+      if (ic) ic.style.display = 'none';
+    }
+  });
+}
+
+/* ════════ SCHREIBEN (v8/v9) ════════ */
+async function dbxUpload(path, content, mode) {
+  const at = await ensureToken();
+  const r = await fetch('https://content.dropboxapi.com/2/files/upload', {
+    method: 'POST',
+    headers: {
+      'Authorization': 'Bearer ' + at,
+      'Dropbox-API-Arg': JSON.stringify({ path, mode: mode || 'add', mute: true, autorename: !mode }),
+      'Content-Type': 'application/octet-stream'
+    },
+    body: content
+  });
+  if (!r.ok) throw new Error('upload ' + path + ' → ' + r.status + ' ' + (await r.text()).slice(0, 140));
+  return r.json();
+}
+async function dbxCreateFolder(path) {
+  try { return await dbxRPC('files/create_folder_v2', { path, autorename: false }); }
+  catch (e) {
+    if (/409/.test(String(e)) || /conflict/i.test(String(e))) return null;  /* existiert bereits → ok */
+    throw e;
+  }
+}
+/* nur dokumentierte Schema-Felder persistieren, updated auf heute setzen */
+function serializeMeta(m) {
+  return {
+    schema: 'kos-files/1',
+    title: m.title,
+    status: m.status,
+    tags: m.tags || [],
+    cover: m.cover,
+    coverFile: m.coverFile || null,
+    pinned: m.pinned || [],
+    created: m.created || TODAY,
+    updated: TODAY,
+    publishLog: m.publishLog || []
+  };
+}
+async function writeProjectMeta(p) {
+  const json = JSON.stringify(serializeMeta(p.meta), null, 2);
+  await dbxUpload('/' + p.meta._dbx + '/project.json', json, 'overwrite');
+  p.meta.updated = TODAY;
+}
+
 /* ════════ LIVE-LADEN ════════ */
 async function loadLive() {
   setSync('load');
@@ -1619,8 +1770,7 @@ function rerenderAll() {
   renderPipeline();
   renderFeed();
   renderCalendar();
-  navStack = [];
-  switchTab('studio');
+  resetToStudio();
 }
 
 function disconnect() {
@@ -1628,12 +1778,13 @@ function disconnect() {
   MODE = 'demo';
   ACCOUNT = null;
   DB = DEMO_DB;
-  closeSheets();
+  thumbCache.clear();
+  hideSheetsUI();
   rerenderAll();
   setSync('demo');
   toast('Getrennt — zurück im Demo-Modus');
 }
-function reloadLive() { closeSheets(); loadLive(); }
+function reloadLive() { hideSheetsUI(); loadLive(); }
 
 /* ── SYNC-BADGE / CONNECT-SHEET ── */
 function setSync(state) {
@@ -1659,8 +1810,7 @@ function openConnect() {
   }
   $('conn-key').value = getAppKey();
   $('conn-uri').value = location.protocol === 'file:' ? '(erst nach Hosting verfügbar)' : redirectUri();
-  $('sheet-overlay').classList.add('show');
-  $('sheet-connect').classList.add('show');
+  openSheet('sheet-connect');
 }
 function copyUri() {
   const v = $('conn-uri').value;
@@ -1709,7 +1859,7 @@ function renderGrid(filter = 'all') {
     const st = STATUS[p.meta.status] || STATUS.idea;
     return `
       <div class="pcard" data-pid="${p.meta.id}">
-        <div class="pcard-cover ${p.meta.cover}">
+        <div class="pcard-cover ${p.meta.cover}" data-thumb="${coverPathOf(p) || ''}">
           <span class="badge"><i style="background:${st.color}"></i>${st.label}</span>
         </div>
         <div class="pcard-body">
@@ -1721,17 +1871,22 @@ function renderGrid(filter = 'all') {
   $('project-grid').querySelectorAll('.pcard').forEach(el => {
     el.onclick = () => openProject(DB.projects.find(p => p.meta.id === el.dataset.pid));
   });
+  hydrateThumbs($('view-studio'));
 }
 
 /* ════════ RENDER: PROJECT ════════ */
-function openProject(p) {
+function renderProject(p) {
   currentProject = p;
   currentWork = null;
   const m = p.meta;
   const st = STATUS[m.status] || STATUS.idea;
   $('proj-title').textContent = m.title;
   $('proj-hero').className = 'proj-hero ' + m.cover;
-  $('proj-badge').innerHTML = `<i style="background:${st.color}"></i>${st.label}`;
+  $('proj-hero').dataset.thumb = coverPathOf(p) || '';
+  const badge = $('proj-badge');
+  badge.innerHTML = `<i style="background:${st.color}"></i>${st.label}`;
+  badge.style.cursor = 'pointer';
+  badge.onclick = () => openStatusSheet(p);
   $('proj-meta').textContent =
     `${fileCount(p)} Dateien · ${fmtSize(projectSize(p))} · Update ${relTime(m.updated).toLowerCase()}`;
 
@@ -1740,11 +1895,11 @@ function openProject(p) {
     const name = path.split('/').pop();
     const f = files.find(x => x.n === name);
     const ico = f ? extIcon(f.ext) : 'file';
-    const coverCls = (m.coverFile && path === m.coverFile) ? m.cover : '';
+    const tp = (f && thumbable(f.ext)) ? filePath(p, f.folder, f.n) : '';
     return `
       <div class="pin-item" data-file="${name}">
-        <div class="pin-thumb ${coverCls}">
-          ${coverCls ? '' : icon(ico, 22)}
+        <div class="pin-thumb" data-thumb="${tp}">
+          <span class="thumb-ico">${icon(ico, 22)}</span>
           <span class="pin-mark">${icon('pin', 11, 2)}</span>
         </div>
         <div class="pin-name">${name}</div>
@@ -1768,11 +1923,14 @@ function openProject(p) {
           <span class="f-arrow">${icon('chevR', 14, 2)}</span>
         </div>
         <div class="file-grid">
-          ${fl.map(f => `
+          ${fl.map(f => {
+            const tp = thumbable(extOf(f.n)) ? filePath(p, folder, f.n) : '';
+            return `
             <div class="file-item" data-file="${f.n}">
-              <div class="file-thumb">${icon(extIcon(extOf(f.n)), 22)}<span class="file-ext">${extOf(f.n) || '—'}</span></div>
+              <div class="file-thumb" data-thumb="${tp}"><span class="thumb-ico">${icon(extIcon(extOf(f.n)), 22)}</span><span class="file-ext">${extOf(f.n) || '—'}</span></div>
               <div class="file-name">${baseOf(f.n)}</div>
-            </div>`).join('')}
+            </div>`;
+          }).join('')}
         </div>
       </div>`;
   }).join('');
@@ -1787,14 +1945,16 @@ function openProject(p) {
     };
   });
 
-  showView('project', true);
+  lowShowView('project');
+  hydrateThumbs($('view-project'));
 }
 
 /* ════════ RENDER: WORK ════════ */
-function openWork(w) {
+function renderWork(w) {
   currentWork = w;
   $('work-title').textContent = w.title;
   $('work-preview').className = 'work-preview ' + (w.project.meta.cover || '');
+  $('work-preview').dataset.thumb = workThumbPath(w) || '';
 
   $('var-count').textContent = '· ' + w.files.length;
   $('variant-list').innerHTML = w.files.map(f => `
@@ -1819,7 +1979,8 @@ function openWork(w) {
   }).join('');
 
   updatePinToggle();
-  showView('work', true);
+  lowShowView('work');
+  hydrateThumbs($('view-work'));
 }
 function mainFileOf(work) { return work.files[0] || null; }
 function isPinned(work) {
@@ -1830,17 +1991,62 @@ function isPinned(work) {
 function updatePinToggle() {
   $('pin-toggle').style.color = (currentWork && isPinned(currentWork)) ? 'var(--accent)' : '';
 }
-function togglePin() {
+async function togglePin() {
   if (!currentWork) return;
-  if (MODE === 'live') { toast('Pin schreibt in project.json — folgt in v9'); return; }
   const w = currentWork;
   const f = mainFileOf(w);
   if (!f) return;
   const pinned = w.project.meta.pinned;
-  const idx = pinned.findIndex(p => p.split('/').pop() === f.n);
-  if (idx >= 0) { pinned.splice(idx, 1); toast('Pin entfernt'); }
-  else { pinned.push((f.folder ? f.folder + '/' : '') + f.n); toast('Gepinnt'); }
+  const rel = (f.folder ? f.folder + '/' : '') + f.n;
+  const idx = pinned.findIndex(x => x.split('/').pop() === f.n);
+  const wasPinned = idx >= 0;
+  if (wasPinned) pinned.splice(idx, 1); else pinned.push(rel);
   updatePinToggle();
+
+  if (MODE === 'live') {
+    setSync('load');
+    try {
+      await writeProjectMeta(w.project);
+      setSync('ok');
+    } catch (e) {
+      if (wasPinned) pinned.push(rel);
+      else { const i = pinned.findIndex(x => x.split('/').pop() === f.n); if (i >= 0) pinned.splice(i, 1); }
+      updatePinToggle();
+      setSync('err');
+      toast('Speichern fehlgeschlagen');
+      return;
+    }
+  }
+  toast(wasPinned ? 'Pin entfernt' : 'Gepinnt');
+}
+
+/* ── Status ändern (schreibt project.json) ── */
+function openStatusSheet(p) {
+  currentProject = p;
+  $('status-opts').innerHTML = Object.keys(STATUS).map(s => `
+    <div class="ow-item" data-s="${s}">
+      <div class="ow-ico"><span style="width:12px;height:12px;border-radius:50%;background:${STATUS[s].color};display:block"></span></div>
+      <div class="ow-name">${STATUS[s].label}</div>
+      ${p.meta.status === s ? '<span class="ow-tag std">Aktuell</span>' : ''}
+    </div>`).join('');
+  $('status-opts').querySelectorAll('.ow-item').forEach(el => {
+    el.onclick = () => setStatus(p, el.dataset.s);
+  });
+  openSheet('sheet-status');
+}
+async function setStatus(p, status) {
+  const prev = p.meta.status;
+  if (prev === status) { closeSheets(); return; }
+  p.meta.status = status;
+  if (MODE === 'live') {
+    setSync('load');
+    try { await writeProjectMeta(p); setSync('ok'); }
+    catch (e) { p.meta.status = prev; setSync('err'); toast('Speichern fehlgeschlagen'); closeSheets(); return; }
+  }
+  renderPipeline();
+  renderGrid(activeFilter);
+  closeSheets();               /* popstate rendert die Projektansicht mit neuem Status */
+  toast('Status: ' + STATUS[status].label);
 }
 
 /* ════════ RENDER: PIPELINE ════════ */
@@ -1856,7 +2062,7 @@ function renderPipeline() {
         </div>
         ${items.map(p => `
           <div class="pipe-card" data-pid="${p.meta.id}">
-            <div class="pp-thumb ${p.meta.cover}"></div>
+            <div class="pp-thumb ${p.meta.cover}" data-thumb="${coverPathOf(p) || ''}"></div>
             <div>
               <div class="pp-title">${p.meta.title}</div>
               <div class="pp-meta">${relTime(p.meta.updated)}</div>
@@ -1867,6 +2073,7 @@ function renderPipeline() {
   $('pipeline-cols').querySelectorAll('.pipe-card').forEach(el => {
     el.onclick = () => openProject(DB.projects.find(p => p.meta.id === el.dataset.pid));
   });
+  hydrateThumbs($('view-pipeline'));
 }
 
 /* ════════ RENDER: FEED ════════ */
@@ -1956,24 +2163,87 @@ function renderCalendar() {
   $('sched-list').querySelectorAll('.sched-item').forEach(el => { el.onclick = openPublish; });
 }
 
-/* ════════ NAVIGATION ════════ */
-function showView(id, push = false) {
-  if (push) {
-    const cur = document.querySelector('.view.active');
-    if (cur) navStack.push(cur.id.replace('view-', ''));
-  }
+/* ════════ NAVIGATION (History-basiert) ════════
+   Jede Vorwärts-Navigation legt einen History-Eintrag an.
+   Die Zurück-Geste/der Zurück-Button lösen history.back() aus →
+   ein Schritt zurück in der App statt Beenden der PWA.
+   Offene Sheets werden ebenfalls eingehängt: Zurück schließt
+   zuerst das Sheet. */
+
+let openSheetId = null;
+
+function lowShowView(id) {
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   $('view-' + id).classList.add('active');
   $('content').scrollTop = 0;
   $('fab').style.display = (id === 'studio') ? 'flex' : 'none';
 }
-function goBack() { showView(navStack.pop() || 'studio'); }
-function switchTab(tab) {
-  navStack = [];
-  document.querySelectorAll('.nav-item').forEach(n =>
-    n.classList.toggle('active', n.dataset.tab === tab));
-  showView(tab);
+
+function findWorkByStem(p, stem) {
+  return deriveWorks(p).find(w => w.stem === stem) || null;
 }
+
+/* Screen aus einem (serialisierbaren) Zustand wiederherstellen */
+function applyScreen(s) {
+  if (!s || s.type === 'tab') {
+    const tab = (s && s.tab) || 'studio';
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.tab === tab));
+    lowShowView(tab);
+  } else if (s.type === 'project') {
+    const p = DB.projects.find(x => x.meta.id === s.pid);
+    if (p) renderProject(p); else applyScreen(null);
+  } else if (s.type === 'work') {
+    const p = DB.projects.find(x => x.meta.id === s.pid);
+    const w = p ? findWorkByStem(p, s.stem) : null;
+    if (w) renderWork(w);
+    else if (p) renderProject(p);
+    else applyScreen(null);
+  }
+}
+
+function pushScreen(s) {
+  history.pushState({ k: 'screen', screen: s }, '');
+  applyScreen(s);
+}
+
+/* Öffentliche Vorwärts-Navigation */
+function switchTab(tab) { pushScreen({ type: 'tab', tab }); }
+function openProject(p) { pushScreen({ type: 'project', pid: p.meta.id }); }
+function openWork(w)    { pushScreen({ type: 'work', pid: w.project.meta.id, stem: w.stem }); }
+function goBack() { history.back(); }
+
+function resetToStudio() {
+  history.replaceState({ k: 'screen', screen: { type: 'tab', tab: 'studio' } }, '');
+  applyScreen({ type: 'tab', tab: 'studio' });
+}
+
+/* Sheets */
+function hideSheetsUI() {
+  $('sheet-overlay').classList.remove('show');
+  document.querySelectorAll('.sheet').forEach(s => s.classList.remove('show'));
+  openSheetId = null;
+}
+function openSheet(id) {
+  $('sheet-overlay').classList.add('show');
+  $(id).classList.add('show');
+  openSheetId = id;
+  history.pushState({ k: 'sheet', id }, '');
+}
+function closeSheets() {
+  if (openSheetId) history.back();   /* löst popstate → hideSheetsUI */
+  else hideSheetsUI();
+}
+
+window.addEventListener('popstate', e => {
+  if (openSheetId) {                 /* Zurück schließt zuerst das offene Sheet */
+    hideSheetsUI();
+    if (e.state && e.state.k === 'screen') applyScreen(e.state.screen);
+    return;
+  }
+  const st = e.state;
+  if (st && st.k === 'screen') applyScreen(st.screen);
+  else applyScreen(null);            /* Wurzel = Studio */
+});
 
 /* ════════ SHEETS ════════ */
 function renderPlatRow() {
@@ -1992,16 +2262,10 @@ function renderPlatRow() {
 }
 function openPublish() {
   if (!$('pub-date').value) $('pub-date').value = TODAY;
-  $('sheet-overlay').classList.add('show');
-  $('sheet-publish').classList.add('show');
+  openSheet('sheet-publish');
 }
 function openOpenWith() {
-  $('sheet-overlay').classList.add('show');
-  $('sheet-openwith').classList.add('show');
-}
-function closeSheets() {
-  $('sheet-overlay').classList.remove('show');
-  document.querySelectorAll('.sheet').forEach(s => s.classList.remove('show'));
+  openSheet('sheet-openwith');
 }
 function schedulePost() {
   if (!selPlatform) { toast('Bitte Plattform wählen'); return; }
@@ -2029,8 +2293,47 @@ function owPick(app) {
   toast('Öffnen mit ' + app + ' — nativer Handoff folgt (v20)');
 }
 function newProject() {
-  if (MODE === 'live') { toast('Projekt-Anlage mit Auto-Struktur folgt in v8'); return; }
-  toast('Neues Projekt — Auto-Struktur folgt in Phase 2 (v8)');
+  $('create-name').value = '';
+  openSheet('sheet-create');
+}
+function sanitizeName(s) {
+  return s.trim().replace(/[\/\\<>:"|?*]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+async function doCreateProject() {
+  const name = sanitizeName($('create-name').value || '');
+  if (!name) { toast('Bitte einen Namen eingeben'); return; }
+  const SUB = ['01 Referenzen', '02 Arbeitsdateien', '03 Exporte', '04 Social'];
+
+  if (MODE !== 'live') {
+    const proj = buildProject(name, [], null);
+    SUB.forEach(f => { proj.files[f] = []; });
+    if (proj.files[''] && proj.files[''].length === 0) delete proj.files[''];
+    DB.projects.unshift(proj);
+    closeSheets();
+    renderGrid(activeFilter);
+    renderPipeline();
+    toast('Projekt „' + name + '" angelegt (Demo)');
+    return;
+  }
+
+  closeSheets();
+  setSync('load');
+  try {
+    await dbxCreateFolder('/' + name);
+    for (const f of SUB) await dbxCreateFolder('/' + name + '/' + f);
+    const meta = {
+      schema: 'kos-files/1', title: name, status: 'idea', tags: [],
+      cover: coverFor(name), coverFile: null, pinned: [],
+      created: TODAY, updated: TODAY, publishLog: []
+    };
+    await dbxUpload('/' + name + '/project.json', JSON.stringify(meta, null, 2), 'overwrite');
+    await loadLive();
+    toast('Projekt „' + name + '" angelegt');
+  } catch (e) {
+    console.error(e);
+    setSync('err');
+    toast('Anlegen fehlgeschlagen: ' + e.message.slice(0, 60));
+  }
 }
 
 /* ════════ TOAST ════════ */
@@ -2066,6 +2369,7 @@ function initNav() {
   renderFeed();
   renderCalendar();
   renderPlatRow();
+  history.replaceState({ k: 'screen', screen: { type: 'tab', tab: 'studio' } }, '');
 
   const params = new URLSearchParams(location.search);
   if (params.get('error')) {
