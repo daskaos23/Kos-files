@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#0f1013">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'self'; style-src 'unsafe-inline'; img-src 'self' blob: data:; connect-src https://api.dropboxapi.com https://content.dropboxapi.com; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'self'; style-src 'unsafe-inline'; img-src 'self' blob: data:; connect-src https://api.dropboxapi.com https://content.dropboxapi.com https://notify.dropboxapi.com https://graph.facebook.com; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-192.png">
 <title>K-OS Files — v6</title>
@@ -46,6 +46,12 @@
   }
   button { font-family: inherit; color: inherit; }
   svg { display: block; }
+  .file-item, .variant, .pin-item, .pcard, .pipe-card, .sched-item, .feed-item,
+  .ow-item, .folder-head, .nav-item, .chip {
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+  }
 
   #app { height: 100%; display: flex; flex-direction: column; }
   #main-col { flex: 1; min-height: 0; display: flex; flex-direction: column; }
@@ -383,6 +389,58 @@
   }
   .sheet-cta.danger { background: var(--err); color: #fff; }
   .file-meta-line { font-size: 11px; color: var(--text3); margin: -8px 0 14px; }
+  #due-banner {
+    margin: 0 18px 12px;
+    padding: 11px 14px;
+    border-radius: var(--radius-sm);
+    background: rgba(240,169,75,0.09);
+    border: 1px solid rgba(240,169,75,0.3);
+    color: var(--st-work);
+    font-size: 12px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+  }
+  #lightbox {
+    position: fixed;
+    inset: 0;
+    background: rgba(5,6,8,0.92);
+    z-index: 400;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  #lightbox-img {
+    max-width: 100%;
+    max-height: 100%;
+    width: 100%;
+    height: 100%;
+    background-size: contain;
+    background-position: center;
+    background-repeat: no-repeat;
+  }
+  .search-hit {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    padding: 10px 4px;
+    border-radius: 10px;
+    cursor: pointer;
+  }
+  .search-hit:active { background: var(--surface2); }
+  .search-hit .sh-ico {
+    width: 36px; height: 36px;
+    border-radius: 9px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--text2); flex-shrink: 0;
+  }
+  .search-hit .sh-name { font-size: 13px; font-weight: 600; }
+  .search-hit .sh-meta { font-size: 10.5px; color: var(--text3); margin-top: 2px; }
   .folder-head .f-arrow { color: var(--text3); transition: transform 0.18s; }
   .folder-sec.open .f-arrow { transform: rotate(90deg); }
 
@@ -930,12 +988,14 @@
       <div id="logo">K-OS<span> FILES</span></div>
       <button id="sync-badge" class="demo" onclick="openConnect()">Demo-Modus</button>
       <div class="spacer"></div>
-      <button class="icon-btn" data-ico="search" onclick="toast('Suche über alle Projekte — folgt')"></button>
+      <button class="icon-btn" data-ico="search" onclick="openSearch()"></button>
+      <button class="icon-btn" data-ico="settings" onclick="openSettings()"></button>
     </header>
 
     <div id="content">
 
       <div class="view active" id="view-studio">
+        <div id="due-banner" style="display:none;"></div>
         <div class="filter-row" id="filter-row"></div>
         <div id="project-grid"></div>
       </div>
@@ -944,7 +1004,7 @@
         <div class="subheader">
           <button class="back-btn" data-ico="chevL" onclick="goBack()"></button>
           <div class="subheader-title" id="proj-title"></div>
-          <button class="icon-btn" data-ico="dots" onclick="toast('Projekt-Optionen — folgt')"></button>
+          <button class="icon-btn" data-ico="dots" onclick="openProjectSheet()"></button>
         </div>
         <div class="proj-hero" id="proj-hero">
           <span class="badge" id="proj-badge"></span>
@@ -1010,16 +1070,21 @@
   <div class="sheet-title">Veröffentlichen</div>
   <div class="plat-row" id="plat-row"></div>
   <div class="tt-note" id="tt-note">
-    TikTok: Der Post wird vorbereitet — der letzte Schritt läuft über das eingebettete TikTok-Fenster (manuelle Bestätigung).
+    TikTok &amp; Patreon bieten keine Browser-Schnittstelle zum direkten Posten. Die App bereitet alles vor (Caption kopiert, Datei geteilt) und öffnet die Plattform — dort nur noch bestätigen.
   </div>
+  <div class="sheet-label">Datei</div>
+  <div class="file-meta-line" id="pub-file" style="margin-top:0;"></div>
   <div class="sheet-label">Caption</div>
   <textarea class="sheet-input" id="pub-caption" rows="3" placeholder="Beschreibungstext…">#dasKos #graffiti #art</textarea>
+  <div class="sheet-label">Hashtag-Sets</div>
+  <div class="filter-row" id="pub-tags" style="padding:0 0 14px;"></div>
   <div class="sheet-label">Zeitpunkt</div>
   <div class="dt-row">
     <input type="date" class="sheet-input" id="pub-date">
     <input type="time" class="sheet-input" id="pub-time" value="09:00">
   </div>
   <button class="sheet-cta" onclick="schedulePost()">EINPLANEN</button>
+  <button class="sheet-btn2" onclick="publishImmediately()">Jetzt veröffentlichen</button>
 </div>
 
 <div class="sheet" id="sheet-openwith">
@@ -1103,19 +1168,92 @@
   <div class="sheet-handle"></div>
   <div class="sheet-title" id="file-title" style="word-break:break-all;"></div>
   <div class="file-meta-line" id="file-meta"></div>
-  <div class="ow-item" onclick="fileAction('rename')">
-    <div class="ow-ico" data-ico="pen"></div>
-    <div class="ow-name">Umbenennen</div>
-  </div>
-  <div class="ow-item" onclick="fileAction('move')">
-    <div class="ow-ico" data-ico="folder"></div>
-    <div class="ow-name">Verschieben nach…</div>
-  </div>
-  <div class="ow-divider"></div>
-  <div class="ow-item" onclick="fileAction('delete')">
-    <div class="ow-ico" data-ico="trash" style="color:var(--err);border-color:rgba(224,122,85,0.3);"></div>
-    <div class="ow-name" style="color:var(--err);">Löschen</div>
-  </div>
+  <div id="file-actions"></div>
+</div>
+
+<div class="sheet" id="sheet-project">
+  <div class="sheet-handle"></div>
+  <div class="sheet-title" id="proj-sheet-title"></div>
+  <div id="project-actions"></div>
+</div>
+
+<div class="sheet" id="sheet-newfolder">
+  <div class="sheet-handle"></div>
+  <div class="sheet-title">Neuer Ordner</div>
+  <div class="sheet-label">Ordnername</div>
+  <input class="sheet-input" id="newfolder-input" placeholder="z. B. 05 Druckdaten">
+  <button class="sheet-cta" onclick="doCreateFolder()">ORDNER ANLEGEN</button>
+</div>
+
+<div class="sheet" id="sheet-tags">
+  <div class="sheet-handle"></div>
+  <div class="sheet-title">Tags bearbeiten</div>
+  <div class="sheet-label">Tags (durch Komma getrennt)</div>
+  <input class="sheet-input" id="tags-input" placeholder="Auftrag, Mural">
+  <button class="sheet-cta" onclick="doSaveTags()">SPEICHERN</button>
+</div>
+
+<div class="sheet" id="sheet-projdelete">
+  <div class="sheet-handle"></div>
+  <div class="sheet-title">Projekt löschen</div>
+  <div class="danger-hint" id="projdelete-hint"></div>
+  <div class="conn-hint">Der komplette Projektordner wandert in den Dropbox-Papierkorb (30 Tage wiederherstellbar).</div>
+  <button class="sheet-cta danger" onclick="doDeleteProject()">PROJEKT LÖSCHEN</button>
+</div>
+
+<div class="sheet" id="sheet-search">
+  <div class="sheet-handle"></div>
+  <div class="sheet-title">Suche</div>
+  <input class="sheet-input" id="search-input" placeholder="Projekt, Datei, Tag…" autocomplete="off">
+  <div id="search-results"></div>
+</div>
+
+<div class="sheet" id="sheet-due">
+  <div class="sheet-handle"></div>
+  <div class="sheet-title">Fällige Posts</div>
+  <div id="due-list"></div>
+</div>
+
+<div class="sheet" id="sheet-share">
+  <div class="sheet-handle"></div>
+  <div class="sheet-title">Empfangene Dateien</div>
+  <div class="conn-hint" id="share-info"></div>
+  <div class="sheet-label">Ziel-Projekt</div>
+  <select class="sheet-input" id="share-project"></select>
+  <div class="sheet-label">Ziel-Ordner</div>
+  <select class="sheet-input" id="share-folder">
+    <option>01 Referenzen</option>
+    <option>02 Arbeitsdateien</option>
+    <option>03 Exporte</option>
+    <option>04 Social</option>
+  </select>
+  <button class="sheet-cta" onclick="doImportShared()">IN PROJEKT ABLEGEN</button>
+  <button class="sheet-btn2 danger" onclick="discardShared()">Verwerfen</button>
+</div>
+
+<div class="sheet" id="sheet-settings">
+  <div class="sheet-handle"></div>
+  <div class="sheet-title">Einstellungen</div>
+
+  <div class="sheet-label">Meta (Instagram &amp; Facebook)</div>
+  <div class="conn-hint">Für echtes Veröffentlichen wird eine eigene Meta-App benötigt (App-ID) — Anleitung in SETUP.md, Teil&nbsp;C. Der Login ist kurzlebig und wird bei Bedarf erneuert.</div>
+  <input class="sheet-input" id="set-meta-appid" placeholder="Meta App-ID">
+  <div class="conn-hint" id="meta-status" style="margin-top:-6px;"></div>
+  <button class="sheet-btn2" onclick="startMetaLogin()">Mit Meta anmelden</button>
+
+  <div class="sheet-label" style="margin-top:20px;">Hashtag-Sets</div>
+  <textarea class="sheet-input" id="set-tags1" rows="1"></textarea>
+  <textarea class="sheet-input" id="set-tags2" rows="1"></textarea>
+  <textarea class="sheet-input" id="set-tags3" rows="1"></textarea>
+
+  <div class="sheet-label">K-OS Draw URL (optional)</div>
+  <input class="sheet-input" id="set-drawurl" placeholder="https://…/kos-draw/">
+
+  <button class="sheet-cta" onclick="saveSettingsSheet()">SPEICHERN</button>
+
+  <div class="sheet-label" style="margin-top:20px;">Offline-Speicher</div>
+  <div class="conn-hint" id="offline-info"></div>
+  <button class="sheet-btn2 danger" onclick="clearOfflineCache()">Offline-Cache leeren</button>
 </div>
 
 <div class="sheet" id="sheet-rename">
@@ -1138,6 +1276,10 @@
   <div class="danger-hint" id="delete-hint"></div>
   <div class="conn-hint">Gelöschte Dateien landen im Dropbox-Papierkorb und sind dort 30 Tage wiederherstellbar (dropbox.com → Gelöschte Dateien).</div>
   <button class="sheet-cta danger" onclick="doDelete()">ENDGÜLTIG LÖSCHEN</button>
+</div>
+
+<div id="lightbox" onclick="this.style.display='none'">
+  <div id="lightbox-img"></div>
 </div>
 
 <input type="file" id="file-input" multiple style="display:none;">
@@ -1427,11 +1569,17 @@ function buildProject(name, entries, metaIn) {
   let newest = '1970-01-01';
   const prefix = ('/' + name + '/').toLowerCase();
   for (const e of entries) {
-    if (e['.tag'] !== 'file') continue;
     const disp = e.path_display || '';
     if (disp.toLowerCase().indexOf(prefix) !== 0) continue;
     const rel = disp.slice(prefix.length);
-    if (!rel || rel.toLowerCase() === 'project.json') continue;
+    if (!rel) continue;
+    if (e['.tag'] === 'folder') {
+      /* Ordner erster Ebene registrieren — auch wenn (noch) leer */
+      if (!rel.includes('/')) files[rel] = files[rel] || [];
+      continue;
+    }
+    if (e['.tag'] !== 'file') continue;
+    if (rel.toLowerCase() === 'project.json') continue;
     const parts = rel.split('/');
     const folderKey = parts.length > 1 ? parts[0] : '';
     const n = parts[parts.length - 1];
@@ -1516,6 +1664,77 @@ function folderIcon(folder) {
 function platChip(id, sz = 30) {
   const p = PLATFORMS[id] || { short: '??', color: '#888' };
   return `<span class="plat-chip" style="width:${sz}px;height:${sz}px;color:${p.color};background:${p.color}1a;">${p.short}</span>`;
+}
+
+/* ── Fällige Posts (rein) ── */
+function duePosts(schedule, nowIso) {
+  return (schedule.posts || []).filter(p =>
+    (p.status || 'scheduled') === 'scheduled' && (p.datetime || '') <= nowIso);
+}
+
+/* ── IndexedDB (Mini-Wrapper) ──
+   stores: kv (Snapshots/Settings) · thumbs (Pfad→Blob) ·
+           files (Offline-Dateien Pfad→Blob) · oplog (Warteschlange) · shared (Share-Target-Eingang) */
+let _idb = null;
+function idbOpen() {
+  if (_idb) return Promise.resolve(_idb);
+  return new Promise((res, rej) => {
+    if (typeof indexedDB === 'undefined') { rej(new Error('no idb')); return; }
+    const req = indexedDB.open('kosfiles', 1);
+    req.onupgradeneeded = () => {
+      const d = req.result;
+      ['kv', 'thumbs', 'files', 'oplog', 'shared'].forEach(s => {
+        if (!d.objectStoreNames.contains(s)) d.createObjectStore(s);
+      });
+    };
+    req.onsuccess = () => { _idb = req.result; res(_idb); };
+    req.onerror = () => rej(req.error);
+  });
+}
+function idbGet(store, key) {
+  return idbOpen().then(d => new Promise((res, rej) => {
+    const r = d.transaction(store).objectStore(store).get(key);
+    r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+  }));
+}
+function idbPut(store, key, val) {
+  return idbOpen().then(d => new Promise((res, rej) => {
+    const r = d.transaction(store, 'readwrite').objectStore(store).put(val, key);
+    r.onsuccess = () => res(); r.onerror = () => rej(r.error);
+  }));
+}
+function idbDel(store, key) {
+  return idbOpen().then(d => new Promise((res, rej) => {
+    const r = d.transaction(store, 'readwrite').objectStore(store).delete(key);
+    r.onsuccess = () => res(); r.onerror = () => rej(r.error);
+  }));
+}
+function idbKeys(store) {
+  return idbOpen().then(d => new Promise((res, rej) => {
+    const r = d.transaction(store).objectStore(store).getAllKeys();
+    r.onsuccess = () => res(r.result || []); r.onerror = () => rej(r.error);
+  }));
+}
+function idbAll(store) {
+  return idbOpen().then(d => new Promise((res, rej) => {
+    const r = d.transaction(store).objectStore(store).getAll();
+    r.onsuccess = () => res(r.result || []); r.onerror = () => rej(r.error);
+  }));
+}
+function idbClear(store) {
+  return idbOpen().then(d => new Promise((res, rej) => {
+    const r = d.transaction(store, 'readwrite').objectStore(store).clear();
+    r.onsuccess = () => res(); r.onerror = () => rej(r.error);
+  }));
+}
+
+/* Snapshot des Live-Zustands (ohne Laufzeitfelder) für Offline-Start */
+function snapshotDB(db) {
+  return JSON.parse(JSON.stringify({
+    root: db.root,
+    schedule: db.schedule,
+    projects: db.projects.map(p => ({ meta: p.meta, files: p.files }))
+  }));
 }
 
 /* ══ DOM ══ (ab hier Rendering + Dropbox-API) */
@@ -1673,8 +1892,14 @@ async function listAll(path, recursive) {
   return entries;
 }
 
-/* ════════ THUMBNAILS (v7) ════════ */
-const thumbCache = new Map();   /* dropboxPath -> objectURL | 'none' | 'pending' */
+/* ════════ THUMBNAILS (v7, überarbeitet) ════════
+   Zentrale Warteschlange: Anfragen aus allen Views landen in einem Topf,
+   ein Loader-Loop holt Batches und wendet Ergebnisse auf ALLE aktuell im
+   DOM stehenden [data-thumb]-Elemente an — keine Races zwischen Views.
+   Erfolgreiche Thumbs wandern zusätzlich in IndexedDB (Offline-Start). */
+const thumbCache = new Map();   /* dropboxPath -> objectURL | 'none' */
+const thumbQueue = new Set();
+let thumbRunning = false;
 
 function thumbable(ext) {
   return ['jpg','jpeg','png','gif','webp','bmp','tif','tiff'].includes(ext);
@@ -1702,57 +1927,74 @@ function workThumbPath(work) {
   const img = work.files.find(f => thumbable(f.ext));
   return img ? filePath(work.project, img.folder, img.n) : coverPathOf(work.project);
 }
-function b64ToUrl(b64) {
-  const bin = atob(b64);
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return URL.createObjectURL(new Blob([bytes], { type: 'image/jpeg' }));
-}
-async function fetchThumbBatch(paths) {
-  if (MODE !== 'live') return;
-  const todo = [];
-  for (const p of paths) {
-    if (p && !thumbCache.has(p) && !todo.includes(p)) todo.push(p);
-    if (todo.length >= 25) break;
-  }
-  if (!todo.length) return;
-  todo.forEach(p => thumbCache.set(p, 'pending'));
-  try {
-    const at = await ensureToken();
-    const r = await fetch('https://content.dropboxapi.com/2/files/get_thumbnail_batch', {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + at, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        entries: todo.map(path => ({ path, format: 'jpeg', size: 'w256h256', mode: 'fitone_bestfit' }))
-      })
-    });
-    if (!r.ok) { todo.forEach(p => thumbCache.set(p, 'none')); return; }
-    const data = await r.json();
-    (data.entries || []).forEach((e, i) => {
-      const path = todo[i];
-      if (e['.tag'] === 'success' && e.thumbnail) thumbCache.set(path, b64ToUrl(e.thumbnail));
-      else thumbCache.set(path, 'none');
-    });
-  } catch (err) {
-    todo.forEach(p => thumbCache.set(p, 'none'));
-  }
-}
-async function hydrateThumbs(scope) {
-  if (MODE !== 'live' || !scope) return;
-  const els = [...scope.querySelectorAll('[data-thumb]')].filter(el => el.dataset.thumb);
-  if (!els.length) return;
-  await fetchThumbBatch(els.map(el => el.dataset.thumb));
-  els.forEach(el => {
-    const u = thumbCache.get(el.dataset.thumb);
-    if (u && u !== 'none' && u !== 'pending') {
-      el.style.backgroundImage = `url(${u})`;
-      el.style.backgroundSize = 'cover';
-      el.style.backgroundPosition = 'center';
-      el.classList.add('has-thumb');
-      const ic = el.querySelector('.thumb-ico');
-      if (ic) ic.style.display = 'none';
-    }
+function applyThumbToDom(path) {
+  const u = thumbCache.get(path);
+  if (!u || u === 'none') return;
+  document.querySelectorAll('[data-thumb]').forEach(el => {
+    if (el.dataset.thumb !== path || el.classList.contains('has-thumb')) return;
+    el.style.backgroundImage = `url(${u})`;
+    el.style.backgroundSize = 'cover';
+    el.style.backgroundPosition = 'center';
+    el.classList.add('has-thumb');
+    const ic = el.querySelector('.thumb-ico');
+    if (ic) ic.style.display = 'none';
   });
+}
+async function thumbLoop() {
+  if (thumbRunning) return;
+  thumbRunning = true;
+  try {
+    while (thumbQueue.size) {
+      const todo = [...thumbQueue].slice(0, 25);
+      todo.forEach(p => thumbQueue.delete(p));
+      /* 1) IndexedDB-Treffer zuerst */
+      const miss = [];
+      for (const p of todo) {
+        const blob = await idbGet('thumbs', p).catch(() => null);
+        if (blob) { thumbCache.set(p, URL.createObjectURL(blob)); applyThumbToDom(p); }
+        else miss.push(p);
+      }
+      if (!miss.length) continue;
+      if (MODE !== 'live' || !navigator.onLine) { continue; }
+      /* 2) Rest von Dropbox holen */
+      try {
+        const at = await ensureToken();
+        const r = await fetch('https://content.dropboxapi.com/2/files/get_thumbnail_batch', {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + at, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            entries: miss.map(path => ({ path, format: 'jpeg', size: 'w480h480', mode: 'fitone_bestfit' }))
+          })
+        });
+        if (!r.ok) { miss.forEach(p => thumbCache.set(p, 'none')); continue; }
+        const data = await r.json();
+        (data.entries || []).forEach((e, i) => {
+          const path = miss[i];
+          if (e['.tag'] === 'success' && e.thumbnail) {
+            const bin = atob(e.thumbnail);
+            const bytes = new Uint8Array(bin.length);
+            for (let k = 0; k < bin.length; k++) bytes[k] = bin.charCodeAt(k);
+            const blob = new Blob([bytes], { type: 'image/jpeg' });
+            thumbCache.set(path, URL.createObjectURL(blob));
+            idbPut('thumbs', path, blob).catch(() => {});
+            applyThumbToDom(path);
+          } else thumbCache.set(path, 'none');
+        });
+      } catch (err) {
+        miss.forEach(p => thumbCache.set(p, 'none'));
+      }
+    }
+  } finally { thumbRunning = false; }
+}
+function hydrateThumbs(scope) {
+  const root = scope || document;
+  root.querySelectorAll('[data-thumb]').forEach(el => {
+    const p = el.dataset.thumb;
+    if (!p) return;
+    if (thumbCache.has(p)) { applyThumbToDom(p); return; }
+    thumbQueue.add(p);
+  });
+  if (thumbQueue.size) thumbLoop();
 }
 
 /* ════════ SCHREIBEN (v8/v9) ════════ */
@@ -1799,7 +2041,8 @@ async function writeProjectMeta(p) {
 }
 
 /* ════════ LIVE-LADEN ════════ */
-async function loadLive() {
+async function loadLive(quiet) {
+  stopSync();
   setSync('load');
   try {
     ACCOUNT = await dbxRPC('users/get_current_account');
@@ -1824,11 +2067,19 @@ async function loadLive() {
 
     DB = { root: 'Apps/K-OS Files', schedule, projects: projects.filter(Boolean) };
     MODE = 'live';
+    idbPut('kv', 'snapshot', snapshotDB(DB)).catch(() => {});
+    await replayOps();
     rerenderAll();
     setSync('ok');
-    const name = ACCOUNT && ACCOUNT.name ? ACCOUNT.name.given_name : '';
-    toast('Dropbox verbunden' + (name ? ' — Hallo ' + name : '') +
-          (DB.projects.length ? '' : '. Noch keine Projektordner gefunden.'));
+    updateSyncBadge();
+    renderDueBanner();
+    hydrateThumbs(document);
+    startSync();
+    if (!quiet) {
+      const name = ACCOUNT && ACCOUNT.name ? ACCOUNT.name.given_name : '';
+      toast('Dropbox verbunden' + (name ? ' — Hallo ' + name : '') +
+            (DB.projects.length ? '' : '. Noch keine Projektordner gefunden.'));
+    }
   } catch (e) {
     console.error(e);
     setSync('err');
@@ -1858,6 +2109,341 @@ function disconnect() {
   toast('Getrennt — zurück im Demo-Modus');
 }
 function reloadLive() { hideSheetsUI(); loadLive(); }
+
+/* ════════ AUTO-SYNC (v10 — Dropbox Longpoll) ════════ */
+let syncCursor = null;
+let syncAbort = null;
+let syncPaused = false;
+let ignoreSyncUntil = 0;      /* eigene Writes nicht als Fremdänderung behandeln */
+
+async function refreshCursor() {
+  try {
+    const r = await dbxRPC('files/list_folder/get_latest_cursor', { path: '', recursive: true });
+    syncCursor = r.cursor;
+  } catch (e) { syncCursor = null; }
+}
+async function syncLoop() {
+  while (MODE === 'live' && syncCursor && !syncPaused) {
+    try {
+      const ctl = new AbortController();
+      syncAbort = ctl;
+      const r = await fetch('https://notify.dropboxapi.com/2/files/list_folder/longpoll', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },   /* bewusst OHNE Authorization */
+        body: JSON.stringify({ cursor: syncCursor, timeout: 60 }),
+        signal: ctl.signal
+      });
+      syncAbort = null;
+      if (!r.ok) { await new Promise(s => setTimeout(s, 15000)); continue; }
+      const data = await r.json();
+      if (data.backoff) await new Promise(s => setTimeout(s, data.backoff * 1000));
+      if (data.changes) {
+        if (Date.now() < ignoreSyncUntil) { await refreshCursor(); continue; }
+        toast('Änderungen in Dropbox erkannt — aktualisiere');
+        await loadLive(true);
+        return;                /* loadLive startet den Loop neu */
+      }
+    } catch (e) {
+      if (e.name === 'AbortError') return;
+      await new Promise(s => setTimeout(s, 15000));
+    }
+  }
+}
+function startSync() {
+  if (MODE !== 'live') return;
+  syncPaused = false;
+  refreshCursor().then(() => { if (syncCursor) syncLoop(); });
+}
+function stopSync() {
+  syncPaused = true;
+  if (syncAbort) { try { syncAbort.abort(); } catch (e) {} syncAbort = null; }
+}
+document.addEventListener('visibilitychange', () => {
+  if (MODE !== 'live') return;
+  if (document.hidden) stopSync();
+  else { startSync(); }
+});
+function markOwnWrite() { ignoreSyncUntil = Date.now() + 8000; }
+
+/* ════════ OFFLINE-WARTESCHLANGE (v13) ════════
+   Offline erlaubt: Status, Pin, Cover, Tags, Post einplanen/entfernen.
+   Datei-Operationen (Upload/Umbenennen/Verschieben/Löschen/Projekt anlegen)
+   erfordern Verbindung — zu konfliktanfällig für eine blinde Queue. */
+let pendingOps = [];   /* { t:'meta'|'schedule', pid? } — dedupliziert */
+
+async function loadOps() { pendingOps = (await idbGet('kv', 'oplog').catch(() => null)) || []; }
+async function saveOps() { await idbPut('kv', 'oplog', pendingOps).catch(() => {}); updateSyncBadge(); }
+function queueOp(op) {
+  if (!pendingOps.some(x => x.t === op.t && x.pid === op.pid)) pendingOps.push(op);
+  saveOps();
+}
+async function replayOps() {
+  if (!pendingOps.length || MODE !== 'live') return;
+  const ops = [...pendingOps];
+  for (const op of ops) {
+    try {
+      if (op.t === 'meta') {
+        const p = DB.projects.find(x => x.meta.id === op.pid);
+        if (p && p.meta._dbx) { markOwnWrite(); await writeProjectMeta(p); }
+      } else if (op.t === 'schedule') {
+        markOwnWrite(); await writeSchedule();
+      }
+      pendingOps = pendingOps.filter(x => x !== op);
+    } catch (e) { console.warn('Replay-Fehler', op, e); }
+  }
+  await saveOps();
+  if (!pendingOps.length) toast('Offline-Änderungen synchronisiert');
+}
+window.addEventListener('online', () => { if (getTokens()) loadLive(); });
+window.addEventListener('offline', () => updateSyncBadge());
+
+function updateSyncBadge() {
+  const b = $('sync-badge');
+  if (MODE === 'cache') {
+    b.classList.add('demo');
+    b.textContent = 'Offline-Stand' + (pendingOps.length ? ' · ' + pendingOps.length + ' ausstehend' : '');
+  } else if (MODE === 'live' && pendingOps.length) {
+    b.textContent = 'Synchron · ' + pendingOps.length + ' ausstehend';
+  }
+}
+
+/* ════════ SCHEDULE SCHREIBEN (v10/v15) ════════ */
+async function writeSchedule() {
+  const json = JSON.stringify(DB.schedule, null, 2);
+  await dbxUpload('/schedule.json', json, 'overwrite');
+}
+async function persistSchedule() {
+  if (MODE === 'live' && navigator.onLine) {
+    try { markOwnWrite(); await writeSchedule(); return true; }
+    catch (e) { queueOp({ t: 'schedule' }); toast('Offline gespeichert — wird nachsynchronisiert'); return false; }
+  }
+  if (MODE === 'cache') { queueOp({ t: 'schedule' }); await idbPut('kv', 'snapshot', snapshotDB(DB)).catch(() => {}); }
+  return false;
+}
+async function persistMeta(p) {
+  if (MODE === 'live' && navigator.onLine) {
+    try { markOwnWrite(); await writeProjectMeta(p); return true; }
+    catch (e) { queueOp({ t: 'meta', pid: p.meta.id }); toast('Offline gespeichert — wird nachsynchronisiert'); return false; }
+  }
+  if (MODE === 'cache') { queueOp({ t: 'meta', pid: p.meta.id }); await idbPut('kv', 'snapshot', snapshotDB(DB)).catch(() => {}); }
+  return false;
+}
+
+/* ════════ EINSTELLUNGEN (localStorage) ════════ */
+const SETTINGS_KEY = 'kosfiles_settings';
+function getSettings() {
+  return Object.assign({
+    metaAppId: '', metaToken: null, metaTokenExp: 0,
+    fbPageId: '', fbPageName: '', fbPageToken: '', igUserId: '', igUserName: '',
+    hashtagSets: ['#dasKos #graffiti #art', '#streetart #mural', '#illustration #sketch'],
+    drawUrl: ''
+  }, safeJson(localStorage.getItem(SETTINGS_KEY) || '', {}));
+}
+function setSettings(patch) {
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(Object.assign(getSettings(), patch)));
+}
+
+/* ════════ META (Instagram/Facebook) PUBLISHING (v16/17) ════════ */
+const FB_SCOPES = 'pages_show_list,pages_read_engagement,pages_manage_posts,instagram_basic,instagram_content_publish,business_management';
+
+function metaConnected() {
+  const s = getSettings();
+  return !!(s.metaToken && s.metaTokenExp > Date.now());
+}
+function startMetaLogin() {
+  const s = getSettings();
+  if (!s.metaAppId) { toast('Zuerst Meta App-ID in den Einstellungen speichern'); return; }
+  const state = randVerifier().slice(0, 24);
+  sessionStorage.setItem('kosfiles_meta_state', state);
+  const u = new URL('https://www.facebook.com/v21.0/dialog/oauth');
+  u.searchParams.set('client_id', s.metaAppId);
+  u.searchParams.set('redirect_uri', redirectUri());
+  u.searchParams.set('response_type', 'token');
+  u.searchParams.set('scope', FB_SCOPES);
+  u.searchParams.set('state', state);
+  location.href = u.toString();
+}
+async function graph(path, params, method) {
+  const s = getSettings();
+  const u = new URL('https://graph.facebook.com/v21.0/' + path);
+  const p = Object.assign({}, params || {});
+  if (!p.access_token) p.access_token = s.metaToken;
+  let body = null;
+  if (method === 'POST') {
+    body = new URLSearchParams(p);
+  } else {
+    Object.keys(p).forEach(k => u.searchParams.set(k, p[k]));
+  }
+  const r = await fetch(u.toString(), method === 'POST' ? { method: 'POST', body } : {});
+  const data = await r.json();
+  if (data.error) throw new Error(data.error.message || 'Graph-Fehler');
+  return data;
+}
+async function metaResolveAccounts() {
+  const acc = await graph('me/accounts', { fields: 'id,name,access_token,instagram_business_account{id,username}' });
+  const pages = acc.data || [];
+  if (!pages.length) throw new Error('Keine Facebook-Seite mit diesem Konto verknüpft.');
+  const page = pages[0];
+  const ig = page.instagram_business_account || {};
+  setSettings({
+    fbPageId: page.id, fbPageName: page.name, fbPageToken: page.access_token || '',
+    igUserId: ig.id || '', igUserName: ig.username || ''
+  });
+  return { page, ig };
+}
+async function finishMetaLogin(hashParams) {
+  const exp = sessionStorage.getItem('kosfiles_meta_state');
+  sessionStorage.removeItem('kosfiles_meta_state');
+  if (exp && hashParams.get('state') !== exp) throw new Error('Meta-Login: state-Prüfung fehlgeschlagen.');
+  const token = hashParams.get('access_token');
+  const expiresIn = parseInt(hashParams.get('expires_in') || '3600', 10);
+  if (!token) throw new Error('Kein Meta-Token erhalten.');
+  setSettings({ metaToken: token, metaTokenExp: Date.now() + (expiresIn - 60) * 1000 });
+  await metaResolveAccounts();
+}
+async function tempLinkFor(p, folder, name) {
+  const r = await dbxRPC('files/get_temporary_link', { path: filePath(p, folder, name) });
+  return r.link;
+}
+/* Sofort-Veröffentlichung eines geplanten Posts */
+async function publishNow(post) {
+  const proj = DB.projects.find(x => x.meta.id === post.project);
+  if (!proj) throw new Error('Projekt nicht gefunden');
+  const fileRel = post.file || '';
+  const folder = fileRel.includes('/') ? fileRel.split('/')[0] : '';
+  const name = fileRel.split('/').pop();
+  const f = name ? findFileObj(proj, folder, name) : null;
+  const s = getSettings();
+
+  if (post.platform === 'ig' || post.platform === 'fb') {
+    if (!metaConnected()) throw new Error('Meta-Login abgelaufen — in den Einstellungen neu anmelden.');
+    if (!f || !thumbable(f.ext)) throw new Error('Für IG/FB bitte eine Bilddatei (JPG/PNG) wählen.');
+    const url = await tempLinkFor(proj, folder, name);
+    if (post.platform === 'ig') {
+      if (!s.igUserId) throw new Error('Kein Instagram-Business-Konto verknüpft.');
+      const c = await graph(s.igUserId + '/media', { image_url: url, caption: post.caption || '' }, 'POST');
+      await graph(s.igUserId + '/media_publish', { creation_id: c.id }, 'POST');
+    } else {
+      if (!s.fbPageId) throw new Error('Keine Facebook-Seite verknüpft.');
+      await graph(s.fbPageId + '/photos', {
+        url, caption: post.caption || '', access_token: s.fbPageToken || s.metaToken
+      }, 'POST');
+    }
+    /* Publish-Log im Projekt fortschreiben */
+    proj.meta.publishLog = proj.meta.publishLog || [];
+    proj.meta.publishLog.push({ file: baseOf(name), platform: post.platform, date: TODAY });
+    await persistMeta(proj);
+    post.status = 'published';
+    post.publishedAt = new Date().toISOString().slice(0, 16);
+    await persistSchedule();
+    return true;
+  }
+
+  /* TikTok & Patreon: Assistent (keine Browser-API verfügbar) */
+  if (post.platform === 'tt' || post.platform === 'pt') {
+    await assistShare(proj, folder, name, post.caption || '',
+      post.platform === 'tt' ? 'https://www.tiktok.com/upload' : 'https://www.patreon.com/posts/new');
+    post.status = 'published';
+    post.publishedAt = new Date().toISOString().slice(0, 16);
+    if (name) {
+      proj.meta.publishLog = proj.meta.publishLog || [];
+      proj.meta.publishLog.push({ file: baseOf(name), platform: post.platform, date: TODAY });
+      await persistMeta(proj);
+    }
+    await persistSchedule();
+    return true;
+  }
+  throw new Error('Unbekannte Plattform');
+}
+
+/* Assistent: Caption in Zwischenablage, Datei teilen (mobil) oder Link öffnen, Ziel-Seite öffnen */
+async function assistShare(proj, folder, name, caption, targetUrl) {
+  try { if (caption) await navigator.clipboard.writeText(caption); } catch (e) {}
+  let shared = false;
+  if (name && navigator.canShare) {
+    try {
+      const f = findFileObj(proj, folder, name);
+      if (f && f.kb < 60000) {                     /* < ~60 MB: Datei direkt teilen */
+        const blob = await downloadFileBlob(proj, folder, name);
+        const file = new File([blob], name, { type: blob.type || 'application/octet-stream' });
+        if (navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file], text: caption || '' });
+          shared = true;
+        }
+      }
+    } catch (e) { /* Nutzer hat Teilen abgebrochen o. ä. */ }
+  }
+  if (!shared && name) {
+    try { const link = await tempLinkFor(proj, folder, name); window.open(link, '_blank'); } catch (e) {}
+  }
+  window.open(targetUrl, '_blank');
+  toast('Caption kopiert — Beitrag dort fertigstellen');
+}
+
+async function downloadFileBlob(proj, folder, name) {
+  const path = filePath(proj, folder, name);
+  const cached = await idbGet('files', path).catch(() => null);
+  if (cached) return cached;
+  const at = await ensureToken();
+  const r = await fetch('https://content.dropboxapi.com/2/files/download', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + at, 'Dropbox-API-Arg': JSON.stringify({ path }) }
+  });
+  if (!r.ok) throw new Error('Download fehlgeschlagen (' + r.status + ')');
+  return r.blob();
+}
+
+/* ════════ OFFLINE HALTEN (v13) ════════ */
+const offlineSet = new Set();   /* Pfade offline verfügbarer Dateien */
+async function loadOfflineSet() {
+  offlineSet.clear();
+  (await idbKeys('files').catch(() => [])).forEach(k => offlineSet.add(k));
+}
+async function toggleOffline(proj, folder, name) {
+  const path = filePath(proj, folder, name);
+  if (!path) return;
+  if (offlineSet.has(path)) {
+    await idbDel('files', path).catch(() => {});
+    offlineSet.delete(path);
+    toast('Offline-Kopie entfernt');
+  } else {
+    if (MODE !== 'live' || !navigator.onLine) { toast('Zum Herunterladen Verbindung nötig'); return; }
+    toast('Lade für Offline-Nutzung…');
+    try {
+      const blob = await downloadFileBlob(proj, folder, name);
+      await idbPut('files', path, blob);
+      offlineSet.add(path);
+      toast('Offline verfügbar');
+    } catch (e) { toast('Download fehlgeschlagen'); }
+  }
+}
+
+/* ════════ ÖFFNEN / TEILEN (v20) ════════ */
+async function openOrShareFile(proj, folder, name) {
+  const path = filePath(proj, folder, name);
+  const cached = path ? await idbGet('files', path).catch(() => null) : null;
+  if (cached) {
+    const f = new File([cached], name, { type: cached.type || 'application/octet-stream' });
+    if (navigator.canShare && navigator.canShare({ files: [f] })) {
+      try { await navigator.share({ files: [f] }); return; } catch (e) { if (e.name === 'AbortError') return; }
+    }
+    window.open(URL.createObjectURL(cached), '_blank');
+    return;
+  }
+  if (MODE !== 'live' || !navigator.onLine) { toast('Offline nicht verfügbar — vorher „Offline halten" aktivieren'); return; }
+  try {
+    const fo = findFileObj(proj, folder, name);
+    if (navigator.canShare && fo && fo.kb < 60000) {
+      const blob = await downloadFileBlob(proj, folder, name);
+      const f = new File([blob], name, { type: blob.type || 'application/octet-stream' });
+      if (navigator.canShare({ files: [f] })) {
+        try { await navigator.share({ files: [f] }); return; } catch (e) { if (e.name === 'AbortError') return; }
+      }
+    }
+    const link = await tempLinkFor(proj, folder, name);
+    window.open(link, '_blank');
+  } catch (e) { toast('Öffnen fehlgeschlagen: ' + e.message.slice(0, 50)); }
+}
 
 /* ── SYNC-BADGE / CONNECT-SHEET ── */
 function setSync(state) {
@@ -2019,7 +2605,7 @@ function renderProject(p) {
       if (suppressClick) { suppressClick = false; return; }
       const w = findWork(p, el.dataset.file);
       if (w) openWork(w);
-      else openFileSheet(p, el.dataset.folder, el.dataset.file);
+      else openSingle(p, el.dataset.folder, el.dataset.file);
     };
     attachLongPress(el, () => openFileSheet(p, el.dataset.folder, el.dataset.file));
   });
@@ -2037,15 +2623,22 @@ function renderWork(w) {
 
   $('var-count').textContent = '· ' + w.files.length;
   $('variant-list').innerHTML = w.files.map(f => `
-    <div class="variant">
+    <div class="variant" data-folder="${f.folder}" data-file="${f.n}">
       <div class="v-ico">${icon(extIcon(f.ext), 18)}</div>
       <div class="v-body">
-        <div class="v-name">${f.n}</div>
+        <div class="v-name">${f.n}${offlineSet.has(filePath(w.project, f.folder, f.n)) ? ' <span style="color:var(--accent);font-size:9px;">●</span>' : ''}</div>
         <div class="v-meta">${fmtSize(f.kb)}${f.info ? ' · ' + f.info : ''} · ${fmtDate(f.mod)}</div>
       </div>
       <span class="v-tag">${roleOf(f.folder, f.ext)}</span>
     </div>`).join('');
-  $('variant-list').querySelectorAll('.variant').forEach(el => { el.onclick = openOpenWith; });
+  $('variant-list').querySelectorAll('.variant').forEach(el => {
+    el.onclick = () => {
+      if (suppressClick) { suppressClick = false; return; }
+      openFileSheet(w.project, el.dataset.folder, el.dataset.file);
+    };
+    attachLongPress(el, () => openFileSheet(w.project, el.dataset.folder, el.dataset.file));
+  });
+  $('work-preview').onclick = () => openLightbox(w);
 
   $('publog').innerHTML = PLAT_ORDER.map(id => {
     const entry = w.log.filter(l => l.platform === id).sort((a, b) => b.date.localeCompare(a.date))[0];
@@ -2081,21 +2674,7 @@ async function togglePin() {
   const wasPinned = idx >= 0;
   if (wasPinned) pinned.splice(idx, 1); else pinned.push(rel);
   updatePinToggle();
-
-  if (MODE === 'live') {
-    setSync('load');
-    try {
-      await writeProjectMeta(w.project);
-      setSync('ok');
-    } catch (e) {
-      if (wasPinned) pinned.push(rel);
-      else { const i = pinned.findIndex(x => x.split('/').pop() === f.n); if (i >= 0) pinned.splice(i, 1); }
-      updatePinToggle();
-      setSync('err');
-      toast('Speichern fehlgeschlagen');
-      return;
-    }
-  }
+  if (MODE !== 'demo') await persistMeta(w.project);
   toast(wasPinned ? 'Pin entfernt' : 'Gepinnt');
 }
 
@@ -2117,11 +2696,7 @@ async function setStatus(p, status) {
   const prev = p.meta.status;
   if (prev === status) { closeSheets(); return; }
   p.meta.status = status;
-  if (MODE === 'live') {
-    setSync('load');
-    try { await writeProjectMeta(p); setSync('ok'); }
-    catch (e) { p.meta.status = prev; setSync('err'); toast('Speichern fehlgeschlagen'); closeSheets(); return; }
-  }
+  if (MODE !== 'demo') await persistMeta(p);
   renderPipeline();
   renderGrid(activeFilter);
   closeSheets();               /* popstate rendert die Projektansicht mit neuem Status */
@@ -2135,7 +2710,12 @@ let uploadTarget = null;       /* { p, folder } */
 
 function attachLongPress(el, fn) {
   let t = null, sx = 0, sy = 0;
-  el.addEventListener('contextmenu', e => { e.preventDefault(); fn(); });
+  el.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    if (t) { clearTimeout(t); t = null; }
+    suppressClick = true;
+    fn();
+  });
   el.addEventListener('pointerdown', e => {
     sx = e.clientX; sy = e.clientY;
     t = setTimeout(() => { t = null; suppressClick = true; fn(); }, 500);
@@ -2281,11 +2861,69 @@ function openFileSheet(p, folder, name) {
   $('file-title').textContent = name;
   $('file-meta').textContent =
     (f ? fmtSize(f.kb) + ' · ' + fmtDate(f.mod) + ' · ' : '') + (folder || 'Projekt-Root');
+  const path = filePath(p, folder, name);
+  const rel = (folder ? folder + '/' : '') + name;
+  const isPin = (p.meta.pinned || []).some(x => x.split('/').pop() === name);
+  const isCover = p.meta.coverFile === rel;
+  const isOff = path && offlineSet.has(path);
+  const canImg = thumbable(extOf(name));
+  $('file-actions').innerHTML = `
+    <div class="ow-item" data-a="open"><div class="ow-ico">${icon('external', 17)}</div><div class="ow-name">Öffnen / Teilen</div></div>
+    <div class="ow-item" data-a="openwith"><div class="ow-ico">${icon('layers', 17)}</div><div class="ow-name">Öffnen mit…</div></div>
+    <div class="ow-divider"></div>
+    <div class="ow-item" data-a="pin"><div class="ow-ico">${icon('pin', 17)}</div><div class="ow-name">${isPin ? 'Pin entfernen' : 'Pinnen'}</div></div>
+    ${canImg ? `<div class="ow-item" data-a="cover"><div class="ow-ico">${icon('image', 17)}</div><div class="ow-name">${isCover ? 'Als Cover entfernen' : 'Als Cover festlegen'}</div></div>` : ''}
+    <div class="ow-item" data-a="offline"><div class="ow-ico">${icon('check', 17)}</div><div class="ow-name">${isOff ? 'Offline-Kopie entfernen' : 'Offline halten'}</div></div>
+    <div class="ow-divider"></div>
+    <div class="ow-item" data-a="rename"><div class="ow-ico">${icon('pen', 17)}</div><div class="ow-name">Umbenennen</div></div>
+    <div class="ow-item" data-a="move"><div class="ow-ico">${icon('folder', 17)}</div><div class="ow-name">Verschieben nach…</div></div>
+    <div class="ow-divider"></div>
+    <div class="ow-item" data-a="delete"><div class="ow-ico" style="color:var(--err);border-color:rgba(224,122,85,0.3);">${icon('trash', 17)}</div><div class="ow-name" style="color:var(--err);">Löschen</div></div>`;
+  $('file-actions').querySelectorAll('.ow-item').forEach(el => {
+    el.onclick = () => fileAction(el.dataset.a);
+  });
   openSheet('sheet-file');
+}
+
+async function quickMetaToggle(kind) {
+  const cf = currentFile;
+  const p = cf.p;
+  const rel = relPathOf(cf);
+  if (kind === 'pin') {
+    const idx = (p.meta.pinned || []).findIndex(x => x.split('/').pop() === cf.name);
+    if (idx >= 0) p.meta.pinned.splice(idx, 1);
+    else (p.meta.pinned = p.meta.pinned || []).push(rel);
+  } else if (kind === 'cover') {
+    p.meta.coverFile = (p.meta.coverFile === rel) ? null : rel;
+    p.meta.cover = p.meta.cover;   /* Gradient bleibt als Fallback */
+  }
+  if (MODE !== 'demo') await persistMeta(p);
+  closeSheets();
+  renderProject(p);
+  renderGrid(activeFilter); renderPipeline();
+  toast(kind === 'pin' ? 'Pin aktualisiert' : 'Cover aktualisiert');
 }
 
 function fileAction(kind) {
   if (!currentFile) return;
+  if (kind === 'open') {
+    const cf = currentFile;
+    closeSheets();
+    openOrShareFile(cf.p, cf.folder, cf.name);
+    return;
+  }
+  if (kind === 'openwith') {
+    hideSheetsUI(); history.back();
+    setTimeout(() => openSheet('sheet-openwith'), 60);
+    return;
+  }
+  if (kind === 'pin' || kind === 'cover') { quickMetaToggle(kind); return; }
+  if (kind === 'offline') {
+    const cf = currentFile;
+    closeSheets();
+    toggleOffline(cf.p, cf.folder, cf.name);
+    return;
+  }
   hideSheetsUI();                       /* Datei-Sheet zu, Folge-Sheet nutzt denselben History-Eintrag */
   history.back();
   setTimeout(() => {
@@ -2330,6 +2968,10 @@ async function afterFileOp(p) {
 }
 
 async function doRename() {
+  if ($('rename-input').dataset.mode === 'project') {
+    $('rename-input').dataset.mode = '';
+    return doRenameProject($('rename-input').value || '');
+  }
   const cf = currentFile;
   if (!cf) return;
   const newName = sanitizeName($('rename-input').value || '');
@@ -2545,6 +3187,22 @@ function findWorkByStem(p, stem) {
   return deriveWorks(p).find(w => w.stem === stem) || null;
 }
 
+/* Einzeldatei (Referenz/Dokument) als Pseudo-Werk für die Werkansicht */
+function makeSingleWork(p, folder, name) {
+  const f = findFileObj(p, folder, name);
+  if (!f) return null;
+  const stem = stemOf(name);
+  const log = (p.meta.publishLog || []).filter(l => stemOf(l.file) === stem);
+  return {
+    stem, title: name,
+    files: [{ ...f, folder, ext: extOf(name), base: baseOf(name), stem }],
+    log, project: p, _single: { folder, name }
+  };
+}
+function openSingle(p, folder, name) {
+  pushScreen({ type: 'single', pid: p.meta.id, folder, name });
+}
+
 /* Screen aus einem (serialisierbaren) Zustand wiederherstellen */
 function applyScreen(s) {
   if (!s || s.type === 'tab') {
@@ -2557,6 +3215,12 @@ function applyScreen(s) {
   } else if (s.type === 'work') {
     const p = DB.projects.find(x => x.meta.id === s.pid);
     const w = p ? findWorkByStem(p, s.stem) : null;
+    if (w) renderWork(w);
+    else if (p) renderProject(p);
+    else applyScreen(null);
+  } else if (s.type === 'single') {
+    const p = DB.projects.find(x => x.meta.id === s.pid);
+    const w = p ? makeSingleWork(p, s.folder, s.name) : null;
     if (w) renderWork(w);
     else if (p) renderProject(p);
     else applyScreen(null);
@@ -2618,41 +3282,168 @@ function renderPlatRow() {
       $('plat-row').querySelectorAll('.plat-opt').forEach(x => x.classList.remove('sel'));
       b.classList.add('sel');
       selPlatform = b.dataset.plat;
-      $('tt-note').classList.toggle('show', selPlatform === 'tt');
+      $('tt-note').classList.toggle('show', selPlatform === 'tt' || selPlatform === 'pt');
     };
   });
 }
+let pubFile = null;    /* { folder, name } — gewählte Datei für den Post */
+
 function openPublish() {
   if (!$('pub-date').value) $('pub-date').value = TODAY;
+  /* Datei-Vorauswahl: Social-Variante > Export > erstes Bild */
+  pubFile = null;
+  const w = currentWork, p = currentProject;
+  if (w) {
+    const pick = w.files.find(f => f.folder.startsWith('04') && thumbable(f.ext))
+              || w.files.find(f => f.folder.startsWith('03') && thumbable(f.ext))
+              || w.files.find(f => thumbable(f.ext)) || w.files[0];
+    if (pick) pubFile = { folder: pick.folder, name: pick.n };
+  } else if (p) {
+    const cp = coverPathOf(p);
+    if (cp) {
+      const parts = cp.split('/').slice(2);
+      pubFile = { folder: parts.length > 1 ? parts[0] : '', name: parts[parts.length - 1] };
+    }
+  }
+  $('pub-file').textContent = pubFile ? pubFile.name : 'Keine Datei gewählt';
+  /* Hashtag-Set-Buttons */
+  const sets = getSettings().hashtagSets || [];
+  $('pub-tags').innerHTML = sets.map((s, i) =>
+    `<button class="chip" data-i="${i}">Set ${i + 1}</button>`).join('');
+  $('pub-tags').querySelectorAll('.chip').forEach(b => {
+    b.onclick = () => {
+      const ta = $('pub-caption');
+      ta.value = (ta.value.trim() + '\n' + sets[b.dataset.i]).trim();
+    };
+  });
   openSheet('sheet-publish');
 }
-function openOpenWith() {
-  openSheet('sheet-openwith');
-}
-function schedulePost() {
-  if (!selPlatform) { toast('Bitte Plattform wählen'); return; }
-  if (MODE === 'live') {
-    closeSheets();
-    toast('Planung schreibt ab v8 in schedule.json — aktuell nur Lesen');
-    return;
-  }
+
+function buildPost(status) {
   const proj = currentProject || DB.projects[0];
-  DB.schedule.posts.push({
+  return {
     id: 's' + Date.now(),
     project: proj ? proj.meta.id : null,
     work: currentWork ? currentWork.stem : null,
+    file: pubFile ? (pubFile.folder ? pubFile.folder + '/' : '') + pubFile.name : null,
     platform: selPlatform,
     datetime: $('pub-date').value + 'T' + $('pub-time').value,
-    title: (currentWork ? currentWork.title : (proj ? proj.meta.title : 'Post')) + ' — Post'
-  });
+    caption: $('pub-caption').value || '',
+    title: (currentWork ? currentWork.title : (proj ? proj.meta.title : 'Post')) + ' — Post',
+    status
+  };
+}
+async function schedulePost() {
+  if (!selPlatform) { toast('Bitte Plattform wählen'); return; }
+  DB.schedule.posts.push(buildPost('scheduled'));
   renderCalendar();
+  renderDueBanner();
   closeSheets();
+  if (MODE !== 'demo') await persistSchedule();
   toast(`Für ${PLATFORMS[selPlatform].name} eingeplant — im Kalender sichtbar`);
 }
-function owPick(app) {
+async function publishImmediately() {
+  if (!selPlatform) { toast('Bitte Plattform wählen'); return; }
+  if (MODE === 'demo') {
+    const post = buildPost('published');
+    post.publishedAt = new Date().toISOString().slice(0, 16);
+    DB.schedule.posts.push(post);
+    renderCalendar();
+    closeSheets();
+    toast('Veröffentlicht (Demo-Simulation)');
+    return;
+  }
+  if (!navigator.onLine) { toast('Zum Veröffentlichen Verbindung nötig'); return; }
+  const post = buildPost('scheduled');
   closeSheets();
+  setSync('load');
+  try {
+    DB.schedule.posts.push(post);
+    await publishNow(post);
+    renderCalendar(); renderDueBanner();
+    setSync('ok');
+    toast(PLATFORMS[selPlatform].name + ': veröffentlicht');
+  } catch (e) {
+    console.error(e);
+    post.status = 'failed';
+    post.error = e.message.slice(0, 120);
+    await persistSchedule();
+    renderCalendar(); renderDueBanner();
+    setSync('ok');
+    toast('Fehlgeschlagen: ' + e.message.slice(0, 80));
+  }
+}
+
+/* Fällige-Posts-Banner im Studio */
+function renderDueBanner() {
+  const el = $('due-banner');
+  if (!el) return;
+  const due = duePosts(DB.schedule, new Date().toISOString().slice(0, 16));
+  const failed = (DB.schedule.posts || []).filter(p => p.status === 'failed');
+  if (!due.length && !failed.length) { el.style.display = 'none'; return; }
+  el.style.display = 'flex';
+  el.innerHTML = `<span>${due.length ? due.length + ' fällige(r) Post(s)' : ''}${due.length && failed.length ? ' · ' : ''}${failed.length ? failed.length + ' fehlgeschlagen' : ''}</span><b>Ansehen</b>`;
+  el.onclick = openDueSheet;
+}
+function openDueSheet() {
+  const now = new Date().toISOString().slice(0, 16);
+  const rel = (DB.schedule.posts || []).filter(p =>
+    ((p.status || 'scheduled') === 'scheduled' && (p.datetime || '') <= now) || p.status === 'failed');
+  $('due-list').innerHTML = rel.length ? rel.map(p => `
+    <div class="sched-item" style="cursor:default;">
+      ${platChip(p.platform, 38)}
+      <div class="si-body">
+        <div class="si-title">${p.title || 'Post'}</div>
+        <div class="si-meta">${fmtDate(p.datetime)} ${p.datetime.slice(11, 16)}${p.status === 'failed' ? ' · <span style="color:var(--err)">' + (p.error || 'Fehler') + '</span>' : ''}</div>
+      </div>
+      <button class="sheet-cta" style="width:auto;height:36px;padding:0 14px;margin:0;" data-id="${p.id}">Senden</button>
+    </div>`).join('') : '<div class="sched-empty">Nichts fällig.</div>';
+  $('due-list').querySelectorAll('button[data-id]').forEach(b => {
+    b.onclick = async () => {
+      const post = DB.schedule.posts.find(x => x.id === b.dataset.id);
+      if (!post) return;
+      b.disabled = true; b.textContent = '…';
+      try {
+        await publishNow(post);
+        toast(PLATFORMS[post.platform].name + ': veröffentlicht');
+      } catch (e) {
+        post.status = 'failed'; post.error = e.message.slice(0, 120);
+        await persistSchedule();
+        toast('Fehlgeschlagen: ' + e.message.slice(0, 80));
+      }
+      renderCalendar(); renderDueBanner(); openDueSheet();
+    };
+  });
+  if (openSheetId !== 'sheet-due') openSheet('sheet-due');
+}
+
+/* „Öffnen mit" (v20) */
+function openOpenWith() { openSheet('sheet-openwith'); }
+async function owPick(app) {
+  const cf = currentFile || (currentWork && mainFileOf(currentWork)
+    ? { p: currentWork.project, folder: mainFileOf(currentWork).folder, name: mainFileOf(currentWork).n }
+    : null);
+  closeSheets();
+  if (!cf) { toast('Keine Datei im Kontext'); return; }
+  const proj = cf.p || (currentWork && currentWork.project);
+  if (app === 'K-OS Draw') {
+    const url = getSettings().drawUrl;
+    if (url) window.open(url, '_blank');
+    await openOrShareFile(proj, cf.folder, cf.name);
+    if (!url) toast('Tipp: K-OS-Draw-URL in den Einstellungen hinterlegen');
+    return;
+  }
   if (app === 'K-OS Vektor') { toast('K-OS Vektor — in Entwicklung'); return; }
-  toast('Öffnen mit ' + app + ' — nativer Handoff folgt (v20)');
+  if (app === 'Dropbox') {
+    if (proj && proj.meta._dbx) {
+      window.open('https://www.dropbox.com/home/Apps/K-OS%20Files/' +
+        encodeURIComponent(proj.meta._dbx) + (cf.folder ? '/' + encodeURIComponent(cf.folder) : '') +
+        '?preview=' + encodeURIComponent(cf.name), '_blank');
+    }
+    return;
+  }
+  /* Photoshop/Affinity/System: Datei teilen bzw. herunterladen → System-„Öffnen mit" */
+  await openOrShareFile(proj, cf.folder, cf.name);
 }
 function newProject() {
   $('create-name').value = '';
@@ -2698,6 +3489,263 @@ async function doCreateProject() {
   }
 }
 
+/* ════════ PROJEKT-MENÜ (⋯) ════════ */
+function openProjectSheet() {
+  const p = currentProject;
+  if (!p) return;
+  $('proj-sheet-title').textContent = p.meta.title;
+  $('project-actions').innerHTML = `
+    <div class="ow-item" data-a="pfolder"><div class="ow-ico">${icon('folder', 17)}</div><div class="ow-name">Neuer Ordner</div></div>
+    <div class="ow-item" data-a="ptags"><div class="ow-ico">${icon('list', 17)}</div><div class="ow-name">Tags bearbeiten</div></div>
+    <div class="ow-item" data-a="prename"><div class="ow-ico">${icon('pen', 17)}</div><div class="ow-name">Projekt umbenennen</div></div>
+    <div class="ow-divider"></div>
+    <div class="ow-item" data-a="pdelete"><div class="ow-ico" style="color:var(--err);border-color:rgba(224,122,85,0.3);">${icon('trash', 17)}</div><div class="ow-name" style="color:var(--err);">Projekt löschen</div></div>`;
+  $('project-actions').querySelectorAll('.ow-item').forEach(el => {
+    el.onclick = () => projectAction(el.dataset.a);
+  });
+  openSheet('sheet-project');
+}
+function projectAction(a) {
+  const p = currentProject;
+  hideSheetsUI(); history.back();
+  setTimeout(() => {
+    if (a === 'pfolder') { $('newfolder-input').value = ''; openSheet('sheet-newfolder'); }
+    else if (a === 'ptags') { $('tags-input').value = (p.meta.tags || []).join(', '); openSheet('sheet-tags'); }
+    else if (a === 'prename') {
+      currentFile = null;
+      $('rename-input').value = p.meta.title;
+      $('rename-input').dataset.mode = 'project';
+      openSheet('sheet-rename');
+    }
+    else if (a === 'pdelete') {
+      $('projdelete-hint').innerHTML = '„<b>' + p.meta.title + '</b>" mit allen Dateien löschen?';
+      openSheet('sheet-projdelete');
+    }
+  }, 60);
+}
+async function doCreateFolder() {
+  const p = currentProject;
+  const name = sanitizeName($('newfolder-input').value || '');
+  if (!p || !name) { toast('Bitte einen Namen eingeben'); return; }
+  try {
+    if (MODE === 'live') {
+      if (!navigator.onLine) { toast('Offline nicht möglich'); return; }
+      setSync('load'); markOwnWrite();
+      await dbxCreateFolder('/' + p.meta._dbx + '/' + name);
+      const np = await reloadProject(p);
+      closeSheets(); renderProject(np); setSync('ok');
+    } else {
+      p.files[name] = p.files[name] || [];
+      closeSheets(); renderProject(p);
+    }
+    toast('Ordner „' + name + '" angelegt');
+  } catch (e) { setSync('err'); toast('Fehlgeschlagen: ' + e.message.slice(0, 60)); }
+}
+async function doSaveTags() {
+  const p = currentProject;
+  if (!p) return;
+  p.meta.tags = ($('tags-input').value || '').split(',').map(s => s.trim()).filter(Boolean);
+  if (MODE !== 'demo') await persistMeta(p);
+  closeSheets(); renderProject(p);
+  toast('Tags gespeichert');
+}
+async function doRenameProject(newTitle) {
+  const p = currentProject;
+  const name = sanitizeName(newTitle);
+  if (!p || !name || name === p.meta.title) { closeSheets(); return; }
+  try {
+    if (MODE === 'live') {
+      if (!navigator.onLine) { toast('Offline nicht möglich'); return; }
+      setSync('load'); markOwnWrite();
+      await dbxRPC('files/move_v2', { from_path: '/' + p.meta._dbx, to_path: '/' + name, autorename: false });
+      p.meta.title = name;
+      p.meta._dbx = name;
+      await writeProjectMeta(p);
+      await loadLive(true);
+      toast('Projekt umbenannt');
+    } else {
+      p.meta.title = name;
+      p.meta.id = slug(name);
+      closeSheets();
+      renderGrid(activeFilter); renderPipeline();
+      renderProject(p);
+      toast('Projekt umbenannt');
+    }
+  } catch (e) { setSync('err'); toast('Umbenennen fehlgeschlagen: ' + e.message.slice(0, 60)); }
+}
+async function doDeleteProject() {
+  const p = currentProject;
+  if (!p) return;
+  try {
+    if (MODE === 'live') {
+      if (!navigator.onLine) { toast('Offline nicht möglich'); return; }
+      setSync('load'); markOwnWrite();
+      await dbxRPC('files/delete_v2', { path: '/' + p.meta._dbx });
+      hideSheetsUI();
+      await loadLive(true);
+      toast('Projekt gelöscht (Dropbox-Papierkorb)');
+    } else {
+      DB.projects = DB.projects.filter(x => x !== p);
+      hideSheetsUI();
+      rerenderAll();
+      toast('Projekt gelöscht (Demo)');
+    }
+  } catch (e) { setSync('err'); toast('Löschen fehlgeschlagen: ' + e.message.slice(0, 60)); }
+}
+
+/* ════════ SUCHE ════════ */
+function openSearch() {
+  $('search-input').value = '';
+  $('search-results').innerHTML = '';
+  openSheet('sheet-search');
+  setTimeout(() => $('search-input').focus(), 350);
+}
+function runSearch(q) {
+  q = q.trim().toLowerCase();
+  if (q.length < 2) { $('search-results').innerHTML = ''; return; }
+  const hits = [];
+  for (const p of DB.projects) {
+    const inTitle = p.meta.title.toLowerCase().includes(q);
+    const inTags = (p.meta.tags || []).some(t => t.toLowerCase().includes(q));
+    if (inTitle || inTags) hits.push({ kind: 'project', p, label: p.meta.title, meta: (p.meta.tags || []).join(', ') || 'Projekt' });
+    for (const f of allFiles(p)) {
+      if (f.n.toLowerCase().includes(q)) hits.push({ kind: 'file', p, f, label: f.n, meta: p.meta.title + ' · ' + (f.folder || 'Root') });
+      if (hits.length > 30) break;
+    }
+    if (hits.length > 30) break;
+  }
+  $('search-results').innerHTML = hits.length ? hits.slice(0, 30).map((h, i) => `
+    <div class="search-hit" data-i="${i}">
+      <div class="sh-ico">${icon(h.kind === 'project' ? 'grid' : extIcon(h.f ? h.f.ext : ''), 17)}</div>
+      <div><div class="sh-name">${h.label}</div><div class="sh-meta">${h.meta}</div></div>
+    </div>`).join('') : '<div class="sched-empty">Keine Treffer.</div>';
+  $('search-results').querySelectorAll('.search-hit').forEach(el => {
+    el.onclick = () => {
+      const h = hits[+el.dataset.i];
+      hideSheetsUI(); history.back();
+      setTimeout(() => {
+        if (h.kind === 'project') openProject(h.p);
+        else {
+          const w = findWork(h.p, h.f.n);
+          if (w) openWork(w); else openSingle(h.p, h.f.folder, h.f.n);
+        }
+      }, 60);
+    };
+  });
+}
+
+/* ════════ EINSTELLUNGEN ════════ */
+async function openSettings() {
+  const s = getSettings();
+  $('set-meta-appid').value = s.metaAppId || '';
+  $('set-tags1').value = s.hashtagSets[0] || '';
+  $('set-tags2').value = s.hashtagSets[1] || '';
+  $('set-tags3').value = s.hashtagSets[2] || '';
+  $('set-drawurl').value = s.drawUrl || '';
+  $('meta-status').textContent = metaConnected()
+    ? 'Verbunden' + (s.fbPageName ? ' · Seite: ' + s.fbPageName : '') + (s.igUserName ? ' · IG: @' + s.igUserName : '')
+    : 'Nicht verbunden (Login nötig vor jedem Veröffentlichen, Token kurzlebig)';
+  const nFiles = (await idbKeys('files').catch(() => [])).length;
+  const nThumbs = (await idbKeys('thumbs').catch(() => [])).length;
+  $('offline-info').textContent = nFiles + ' Offline-Datei(en) · ' + nThumbs + ' Vorschaubilder · ' + pendingOps.length + ' ausstehende Änderung(en)';
+  openSheet('sheet-settings');
+}
+function saveSettingsSheet() {
+  setSettings({
+    metaAppId: $('set-meta-appid').value.trim(),
+    hashtagSets: [$('set-tags1').value.trim(), $('set-tags2').value.trim(), $('set-tags3').value.trim()].filter(Boolean),
+    drawUrl: $('set-drawurl').value.trim()
+  });
+  closeSheets();
+  toast('Einstellungen gespeichert');
+}
+async function clearOfflineCache() {
+  await idbClear('files').catch(() => {});
+  await idbClear('thumbs').catch(() => {});
+  offlineSet.clear();
+  thumbCache.clear();
+  toast('Offline-Cache geleert');
+  openSettings();
+}
+
+/* ════════ LIGHTBOX ════════ */
+function openLightbox(w) {
+  const path = workThumbPath(w);
+  if (!path) { toast('Keine Bildvorschau verfügbar'); return; }
+  const lb = $('lightbox');
+  lb.style.display = 'flex';
+  const cached = thumbCache.get(path);
+  if (cached && cached !== 'none') {
+    $('lightbox-img').style.backgroundImage = `url(${cached})`;
+  } else {
+    $('lightbox-img').style.backgroundImage = '';
+  }
+  /* größere Version nachladen */
+  if (MODE === 'live' && navigator.onLine) {
+    (async () => {
+      try {
+        const at = await ensureToken();
+        const r = await fetch('https://content.dropboxapi.com/2/files/get_thumbnail_batch', {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + at, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ entries: [{ path, format: 'jpeg', size: 'w1024h768', mode: 'fitone_bestfit' }] })
+        });
+        const data = await r.json();
+        const e = (data.entries || [])[0];
+        if (e && e['.tag'] === 'success' && e.thumbnail) {
+          const bin = atob(e.thumbnail);
+          const bytes = new Uint8Array(bin.length);
+          for (let k = 0; k < bin.length; k++) bytes[k] = bin.charCodeAt(k);
+          $('lightbox-img').style.backgroundImage =
+            `url(${URL.createObjectURL(new Blob([bytes], { type: 'image/jpeg' }))})`;
+        }
+      } catch (err) {}
+    })();
+  }
+}
+
+/* ════════ SHARE-TARGET-IMPORT (v14) ════════ */
+async function checkSharedInbox() {
+  const items = await idbAll('shared').catch(() => []);
+  if (!items.length) return;
+  $('share-info').textContent = items.length + ' Datei(en) empfangen: ' +
+    items.map(i => i.name).slice(0, 4).join(', ') + (items.length > 4 ? '…' : '');
+  $('share-project').innerHTML = DB.projects.map(p =>
+    `<option value="${p.meta.id}">${p.meta.title}</option>`).join('');
+  openSheet('sheet-share');
+}
+async function doImportShared() {
+  if (MODE !== 'live' || !navigator.onLine) { toast('Zum Ablegen Verbindung nötig — Dateien bleiben im Eingang'); return; }
+  const pid = $('share-project').value;
+  const folder = $('share-folder').value;
+  const p = DB.projects.find(x => x.meta.id === pid);
+  if (!p) { toast('Projekt wählen'); return; }
+  const items = await idbAll('shared').catch(() => []);
+  const keys = await idbKeys('shared').catch(() => []);
+  closeSheets();
+  setSync('load');
+  try {
+    for (const it of items) {
+      const path = '/' + p.meta._dbx + '/' + folder + '/' + it.name;
+      await uploadOne(path, it.blob);
+    }
+    for (const k of keys) await idbDel('shared', k).catch(() => {});
+    const np = await reloadProject(p);
+    setSync('ok');
+    toast(items.length + ' Datei(en) in „' + p.meta.title + '" abgelegt');
+    openProject(np);
+  } catch (e) {
+    setSync('err');
+    toast('Ablegen fehlgeschlagen: ' + e.message.slice(0, 60));
+  }
+}
+async function discardShared() {
+  const keys = await idbKeys('shared').catch(() => []);
+  for (const k of keys) await idbDel('shared', k).catch(() => {});
+  closeSheets();
+  toast('Empfangene Dateien verworfen');
+}
+
 /* ════════ TOAST ════════ */
 function toast(msg) {
   const el = $('toast');
@@ -2732,7 +3780,24 @@ function initNav() {
   renderCalendar();
   renderPlatRow();
   $('file-input').onchange = e => handleUploadFiles(e.target.files);
+  $('search-input').oninput = e => runSearch(e.target.value);
   history.replaceState({ k: 'screen', screen: { type: 'tab', tab: 'studio' } }, '');
+  await loadOps().catch(() => {});
+  await loadOfflineSet().catch(() => {});
+
+  /* Meta-Login-Rücksprung (Token im URL-Hash) */
+  if (location.hash && location.hash.includes('access_token=')) {
+    const hp = new URLSearchParams(location.hash.slice(1));
+    history.replaceState({ k: 'screen', screen: { type: 'tab', tab: 'studio' } }, '', location.pathname);
+    try {
+      await finishMetaLogin(hp);
+      toast('Meta verbunden');
+    } catch (e) {
+      console.error(e);
+      toast('Meta-Login fehlgeschlagen: ' + e.message.slice(0, 70));
+    }
+    if (getTokens()) { await loadLive(true); openSettings(); return; }
+  }
 
   const params = new URLSearchParams(location.search);
   if (params.get('error')) {
@@ -2763,8 +3828,33 @@ function initNav() {
     }
     return;
   }
-  if (getTokens()) { loadLive(); return; }
+
+  const wasShared = params.get('share') === '1';
+  if (wasShared) history.replaceState({ k: 'screen', screen: { type: 'tab', tab: 'studio' } }, '', location.pathname);
+
+  if (getTokens()) {
+    if (!navigator.onLine) {
+      /* Offline-Start aus dem letzten Live-Snapshot */
+      const snap = await idbGet('kv', 'snapshot').catch(() => null);
+      if (snap && snap.projects) {
+        DB = snap;
+        DB.projects.forEach(p => { p.meta._dbx = p.meta._dbx || p.meta.title; });
+        MODE = 'cache';
+        rerenderAll();
+        setSync('ok');
+        updateSyncBadge();
+        renderDueBanner();
+        hydrateThumbs(document);
+        toast('Offline — letzter Stand geladen');
+        return;
+      }
+    }
+    await loadLive();
+    if (wasShared) checkSharedInbox();
+    return;
+  }
   setSync('demo');
+  if (wasShared) toast('Empfangene Dateien warten — bitte zuerst Dropbox verbinden');
 })();
 
 /* Service Worker registrieren (nur unter http/https, nicht file://) */
